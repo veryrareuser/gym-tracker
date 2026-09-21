@@ -1,15 +1,101 @@
 // src/pages/History.jsx
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ChevronRight, Dumbbell, Trash2 } from 'lucide-react'
+import { ChevronRight, Dumbbell, Trash2, ChevronLeft } from 'lucide-react'
 import { getSessions, getExercises, deleteSession } from '../lib/db'
 import { formatDate, calcVolume } from '../lib/utils'
+
+const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+
+function CalendarGrid({ year, month, sessionsByDate, onDayClick }) {
+  const today = new Date().toISOString().slice(0, 10)
+  // month is 0-indexed
+  const firstDay = new Date(year, month, 1)
+  // Mon=0 ... Sun=6 offset
+  let startOffset = firstDay.getDay() - 1
+  if (startOffset < 0) startOffset = 6
+  const daysInMonth = new Date(year, month + 1, 0).getDate()
+
+  const cells = []
+  // empty cells before first day
+  for (let i = 0; i < startOffset; i++) cells.push(null)
+  for (let d = 1; d <= daysInMonth; d++) cells.push(d)
+
+  function isoDate(day) {
+    return `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+  }
+
+  return (
+    <div>
+      {/* Day headers */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4, marginBottom: 4 }}>
+        {DAY_LABELS.map(d => (
+          <div key={d} style={{ textAlign: 'center', fontSize: 10, color: 'var(--color-muted)', fontWeight: 600, paddingBottom: 4 }}>
+            {d}
+          </div>
+        ))}
+      </div>
+      {/* Day cells */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4 }}>
+        {cells.map((day, idx) => {
+          if (!day) return <div key={`empty-${idx}`} />
+          const iso = isoDate(day)
+          const session = sessionsByDate[iso]
+          const isToday = iso === today
+          const hasSession = Boolean(session)
+
+          return (
+            <div
+              key={iso}
+              onClick={() => hasSession && onDayClick(session)}
+              style={{
+                aspectRatio: '1',
+                borderRadius: 8,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: 13,
+                fontWeight: hasSession ? 800 : 400,
+                cursor: hasSession ? 'pointer' : 'default',
+                background: hasSession ? 'var(--color-accent-dim)' : 'transparent',
+                border: isToday
+                  ? '2px solid var(--color-accent)'
+                  : hasSession
+                    ? '1px solid rgba(200,241,53,0.3)'
+                    : '1px solid transparent',
+                color: hasSession ? 'var(--color-accent)' : 'var(--color-muted)',
+                transition: 'background 0.1s',
+                position: 'relative',
+              }}
+            >
+              {day}
+              {hasSession && (
+                <div style={{
+                  position: 'absolute',
+                  bottom: 3,
+                  width: 4,
+                  height: 4,
+                  borderRadius: '50%',
+                  background: 'var(--color-accent)',
+                }} />
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
 
 export default function History() {
   const [sessions, setSessions] = useState([])
   const [exercises, setExercises] = useState([])
   const [deleting, setDeleting] = useState(null)
   const navigate = useNavigate()
+
+  const now = new Date()
+  const [calYear, setCalYear] = useState(now.getFullYear())
+  const [calMonth, setCalMonth] = useState(now.getMonth()) // 0-indexed
 
   useEffect(() => {
     getSessions().then(setSessions)
@@ -25,9 +111,26 @@ export default function History() {
     setDeleting(null)
   }
 
-  // Group by month
+  // O(1) lookup: date string → session
+  const sessionsByDate = sessions.reduce((acc, s) => {
+    acc[s.date] = s
+    return acc
+  }, {})
+
+  function prevMonth() {
+    if (calMonth === 0) { setCalYear(y => y - 1); setCalMonth(11) }
+    else setCalMonth(m => m - 1)
+  }
+  function nextMonth() {
+    if (calMonth === 11) { setCalYear(y => y + 1); setCalMonth(0) }
+    else setCalMonth(m => m + 1)
+  }
+
+  const calMonthLabel = new Date(calYear, calMonth).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
+
+  // Group sessions by month for the list below
   const grouped = sessions.reduce((acc, s) => {
-    const key = s.date.slice(0, 7) // "2025-09"
+    const key = s.date.slice(0, 7)
     if (!acc[key]) acc[key] = []
     acc[key].push(s)
     return acc
@@ -41,8 +144,44 @@ export default function History() {
 
   return (
     <div style={{ padding: '24px 16px' }}>
-      <h1 style={{ fontSize: 24, fontWeight: 800, marginBottom: 20 }}>History</h1>
+      <h1 style={{ fontSize: 24, fontWeight: 800, marginBottom: 16 }}>History</h1>
 
+      {/* ── Calendar ── */}
+      <div style={{
+        background: 'var(--color-surface)',
+        border: '1px solid var(--color-border)',
+        borderRadius: 16,
+        padding: '14px',
+        marginBottom: 24,
+      }}>
+        {/* Month nav */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+          <button onClick={prevMonth} style={{ background: 'none', border: 'none', color: 'var(--color-muted)', padding: 4, display: 'flex' }}>
+            <ChevronLeft size={18} />
+          </button>
+          <span style={{ fontWeight: 700, fontSize: 14 }}>{calMonthLabel}</span>
+          <button onClick={nextMonth} style={{ background: 'none', border: 'none', color: 'var(--color-muted)', padding: 4, display: 'flex' }}>
+            <ChevronRight size={18} />
+          </button>
+        </div>
+
+        <CalendarGrid
+          year={calYear}
+          month={calMonth}
+          sessionsByDate={sessionsByDate}
+          onDayClick={session => navigate(`/history/${session.id}`)}
+        />
+
+        {/* Legend */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 10, justifyContent: 'flex-end' }}>
+          <div style={{ width: 10, height: 10, borderRadius: 3, background: 'var(--color-accent-dim)', border: '1px solid rgba(200,241,53,0.3)' }} />
+          <span style={{ fontSize: 11, color: 'var(--color-muted)' }}>Trained</span>
+          <div style={{ width: 10, height: 10, borderRadius: '50%', border: '2px solid var(--color-accent)', marginLeft: 8 }} />
+          <span style={{ fontSize: 11, color: 'var(--color-muted)' }}>Today</span>
+        </div>
+      </div>
+
+      {/* ── Session list ── */}
       {sessions.length === 0 && (
         <div style={{ textAlign: 'center', padding: '60px 24px', color: 'var(--color-muted)' }}>
           <Dumbbell size={40} style={{ opacity: 0.3, marginBottom: 12 }} />

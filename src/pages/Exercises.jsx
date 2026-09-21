@@ -102,8 +102,16 @@ export default function Exercises() {
 
   async function handleSave(exercise) {
     await saveExercise(exercise)
-    const updated = await getExercises()
-    setExercises(updated)
+    // Optimistic update — no re-fetch needed, avoids Supabase race condition
+    setExercises(prev => {
+      const idx = prev.findIndex(e => e.id === exercise.id)
+      if (idx >= 0) {
+        const next = [...prev]
+        next[idx] = exercise
+        return next
+      }
+      return [...prev, exercise]
+    })
     setShowForm(false)
     setEditing(null)
   }

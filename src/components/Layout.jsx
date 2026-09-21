@@ -1,6 +1,7 @@
 // src/components/Layout.jsx
-import { Outlet, NavLink, useNavigate } from 'react-router-dom'
+import { Outlet, NavLink } from 'react-router-dom'
 import { LayoutDashboard, Dumbbell, History, BarChart2, ListChecks } from 'lucide-react'
+import RestTimer from './RestTimer'
 
 const navItems = [
   { to: '/', icon: LayoutDashboard, label: 'Home' },
@@ -17,6 +18,9 @@ export default function Layout() {
       <main style={{ flex: 1, overflowY: 'auto', paddingBottom: 80 }}>
         <Outlet />
       </main>
+
+      {/* Persistent rest timer — floats above bottom nav */}
+      <RestTimer />
 
       {/* Bottom navigation */}
       <nav style={{

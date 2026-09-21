@@ -1,6 +1,7 @@
 // src/lib/db.js
 // Abstraction layer: reads/writes localStorage, syncs to Supabase when available.
 import { supabase } from './supabaseClient'
+import { getImageUrl, DEFAULT_EXERCISE_IMAGE_MAP } from './exerciseDb'
 
 const KEYS = {
   exercises: 'gym_exercises',
@@ -21,16 +22,16 @@ function localSet(key, value) {
 
 /* ─── Default exercises ─── */
 export const DEFAULT_EXERCISES = [
-  { id: '1', name: 'Dumbbell Flat Bench', muscle_group: 'Chest', order: 1 },
-  { id: '2', name: 'Incline Dumbbell Press', muscle_group: 'Chest', order: 2 },
-  { id: '3', name: 'Shoulder Press', muscle_group: 'Shoulders', order: 3 },
-  { id: '4', name: 'Lat Pull Down', muscle_group: 'Back', order: 4 },
-  { id: '5', name: 'Close Grip Row', muscle_group: 'Back', order: 5 },
-  { id: '6', name: 'Wide Grip Row', muscle_group: 'Back', order: 6 },
-  { id: '7', name: 'Cable Lateral Raise', muscle_group: 'Shoulders', order: 7 },
-  { id: '8', name: 'Tricep Extension', muscle_group: 'Arms', order: 8 },
-  { id: '9', name: 'Bicep Curl', muscle_group: 'Arms', order: 9 },
-  { id: '10', name: 'Hammer Curl', muscle_group: 'Arms', order: 10 },
+  { id: '1', name: 'Dumbbell Flat Bench', muscle_group: 'Chest', order: 1, image_url: getImageUrl(DEFAULT_EXERCISE_IMAGE_MAP['1']) },
+  { id: '2', name: 'Incline Dumbbell Press', muscle_group: 'Chest', order: 2, image_url: getImageUrl(DEFAULT_EXERCISE_IMAGE_MAP['2']) },
+  { id: '3', name: 'Shoulder Press', muscle_group: 'Shoulders', order: 3, image_url: getImageUrl(DEFAULT_EXERCISE_IMAGE_MAP['3']) },
+  { id: '4', name: 'Lat Pull Down', muscle_group: 'Back', order: 4, image_url: getImageUrl(DEFAULT_EXERCISE_IMAGE_MAP['4']) },
+  { id: '5', name: 'Close Grip Row', muscle_group: 'Back', order: 5, image_url: getImageUrl(DEFAULT_EXERCISE_IMAGE_MAP['5']) },
+  { id: '6', name: 'Wide Grip Row', muscle_group: 'Back', order: 6, image_url: getImageUrl(DEFAULT_EXERCISE_IMAGE_MAP['6']) },
+  { id: '7', name: 'Cable Lateral Raise', muscle_group: 'Shoulders', order: 7, image_url: getImageUrl(DEFAULT_EXERCISE_IMAGE_MAP['7']) },
+  { id: '8', name: 'Tricep Extension', muscle_group: 'Arms', order: 8, image_url: getImageUrl(DEFAULT_EXERCISE_IMAGE_MAP['8']) },
+  { id: '9', name: 'Bicep Curl', muscle_group: 'Arms', order: 9, image_url: getImageUrl(DEFAULT_EXERCISE_IMAGE_MAP['9']) },
+  { id: '10', name: 'Hammer Curl', muscle_group: 'Arms', order: 10, image_url: getImageUrl(DEFAULT_EXERCISE_IMAGE_MAP['10']) },
 ]
 
 /* ─── Exercises ─── */

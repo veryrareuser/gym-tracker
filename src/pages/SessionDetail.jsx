@@ -62,11 +62,17 @@ export default function SessionDetail() {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 <div style={{
-                  width: 36, height: 36, borderRadius: 10,
-                  background: 'var(--color-accent-dim)',
+                  width: 48, height: 48, borderRadius: 10,
+                  background: 'var(--color-surface2)',
+                  border: '1px solid var(--color-border)',
+                  overflow: 'hidden',
+                  flexShrink: 0,
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                 }}>
-                  <Dumbbell size={16} color="var(--color-accent)" />
+                  {ex?.image_url
+                    ? <img src={ex.image_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} loading="lazy" onError={e => { e.target.style.display = 'none' }} />
+                    : <Dumbbell size={20} color="var(--color-border)" />
+                  }
                 </div>
                 <div>
                   <div style={{ fontWeight: 700, fontSize: 15 }}>{ex?.name || 'Unknown'}</div>
