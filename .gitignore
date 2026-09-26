@@ -12,6 +12,10 @@ dist
 dist-ssr
 *.local
 
+# Source dataset (17.5 MB) — regenerate the committed slim index instead
+# with: node scripts/build-exercise-index.mjs
+public/exercises.json
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

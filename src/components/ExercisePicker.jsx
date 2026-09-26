@@ -1,222 +1,337 @@
 // src/components/ExercisePicker.jsx
-import { useState, useEffect, useRef } from 'react'
-import { X, Search, Dumbbell } from 'lucide-react'
-import { searchExercises, getImageUrl } from '../lib/exerciseDb'
+import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
+import { Search, X, Dumbbell, Check, ChevronDown } from 'lucide-react'
+import { searchExercises, getExerciseFacets, imageUrl } from '../lib/exerciseDb'
 
-const BODY_PART_COLORS = {
-  chest: '#ff6b6b',
-  back: '#4dabf7',
-  shoulders: '#a9e34b',
-  'upper arms': '#ffd43b',
-  'lower arms': '#ffc9c9',
-  legs: '#74c0fc',
-  waist: '#f783ac',
-  cardio: '#69db7c',
-}
-
-function tagColor(bodyPart) {
-  return BODY_PART_COLORS[bodyPart?.toLowerCase()] || 'var(--color-muted)'
-}
-
-export default function ExercisePicker({ open, onClose, onSelect, usedIds = [] }) {
-  const [query, setQuery] = useState('')
-  const [results, setResults] = useState([])
-  const [loading, setLoading] = useState(false)
-  const inputRef = useRef(null)
-  const debounceRef = useRef(null)
+/**
+ * Full-screen exercise search presented as a sheet.
+ *
+ * Mounted only while open, so state starts clean without a reset effect.
+ *
+ * Height is driven by window.visualViewport rather than `position: fixed; inset: 0`.
+ * A fixed overlay resolves against the layout viewport, which does not shrink for
+ * the on-screen keyboard on iOS — the bottom half of the result list ended up hidden
+ * behind the keyboard. The visual viewport does shrink, and offsetTop tracks the
+ * pan, so the sheet stays fully visible while typing.
+ */
+function useVisualViewport() {
+  const [vp, setVp] = useState(() => ({
+    height: window.visualViewport?.height ?? window.innerHeight,
+    offsetTop: window.visualViewport?.offsetTop ?? 0,
+  }))
 
   useEffect(() => {
-    if (!open) return
-    setQuery('')
-    setLoading(true)
-    searchExercises('').then(r => { setResults(r); setLoading(false) })
-    setTimeout(() => inputRef.current?.focus(), 100)
-  }, [open])
+    const vv = window.visualViewport
+    if (!vv) return
+    const onChange = () => setVp({ height: vv.height, offsetTop: vv.offsetTop })
+    vv.addEventListener('resize', onChange)
+    vv.addEventListener('scroll', onChange)
+    onChange()
+    return () => {
+      vv.removeEventListener('resize', onChange)
+      vv.removeEventListener('scroll', onChange)
+    }
+  }, [])
 
-  function handleSearch(value) {
-    setQuery(value)
-    clearTimeout(debounceRef.current)
-    setLoading(true)
-    debounceRef.current = setTimeout(async () => {
-      const r = await searchExercises(value)
-      setResults(r)
-      setLoading(false)
-    }, 200)
-  }
+  return vp
+}
 
-  if (!open) return null
+function titleCase(value) {
+  return value ? value.charAt(0).toUpperCase() + value.slice(1) : ''
+}
 
-  return (
-    <div style={{
-      position: 'fixed',
-      inset: 0,
-      zIndex: 300,
-      background: 'var(--color-bg)',
-      display: 'flex',
-      flexDirection: 'column',
-      maxWidth: 480,
-      left: '50%',
-      transform: 'translateX(-50%)',
-    }}>
-      {/* Header */}
-      <div style={{
+export default function ExercisePicker({ onClose, onSelect, usedIds = [] }) {
+  const [query, setQuery] = useState('')
+  const [bodyPart, setBodyPart] = useState('')
+  const [showEquipment, setShowEquipment] = useState(false)
+  const [equipment, setEquipment] = useState('')
+  const [facets, setFacets] = useState({ bodyParts: [], equipment: [] })
+  // Holds the results for one specific filter combination plus the key they belong
+  // to, so "loading" is derived from whether the current key has been answered
+  // rather than tracked with a separate state update on every keystroke.
+  const [resolved, setResolved] = useState({ key: '', results: [] })
+  const inputRef = useRef(null)
+  const viewport = useVisualViewport()
+
+  const currentKey = `${query}|${bodyPart}|${equipment}`
+  const isAnswered = resolved.key === currentKey
+  const results = isAnswered ? resolved.results : []
+  const status = isAnswered ? 'ready' : 'loading'
+
+  // Load facets and the first page, and lock background scroll while open.
+  useEffect(() => {
+    let cancelled = false
+    document.body.style.overflow = 'hidden'
+
+    getExerciseFacets().then(f => {
+      if (!cancelled) setFacets(f)
+    })
+    // The index is ~194 KB, so results are ready immediately — no debounce needed.
+    searchExercises('', {}).then(r => {
+      if (!cancelled) setResolved({ key: '||', results: r })
+    })
+
+    const focusTimer = setTimeout(() => inputRef.current?.focus({ preventScroll: true }), 120)
+    return () => {
+      cancelled = true
+      clearTimeout(focusTimer)
+      document.body.style.overflow = ''
+    }
+  }, [])
+
+  // The untouched filter combination is skipped because the mount effect above
+  // already answered it.
+  useEffect(() => {
+    if (currentKey === '||') return
+    let cancelled = false
+    searchExercises(query, { bodyPart, equipment }).then(r => {
+      if (!cancelled) setResolved({ key: currentKey, results: r })
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [query, bodyPart, equipment, currentKey])
+
+  useEffect(() => {
+    const onKey = e => e.key === 'Escape' && onClose()
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  const used = new Set(usedIds)
+  const hasFilters = Boolean(bodyPart || equipment)
+
+  return createPortal(
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Add exercise"
+      style={{
+        position: 'fixed',
+        top: viewport.offsetTop,
+        left: '50%',
+        transform: 'translateX(-50%)',
+        width: '100%',
+        maxWidth: 520,
+        height: viewport.height,
+        zIndex: 300,
+        background: 'var(--color-bg)',
         display: 'flex',
-        alignItems: 'center',
-        gap: 12,
-        padding: '14px 16px',
-        borderBottom: '1px solid var(--color-border)',
-        flexShrink: 0,
-      }}>
-        <button
-          onClick={onClose}
-          style={{ background: 'none', border: 'none', color: 'var(--color-muted)', padding: 0, flexShrink: 0 }}
-        >
-          <X size={22} />
-        </button>
-        <div style={{
-          flex: 1,
-          display: 'flex',
-          alignItems: 'center',
-          gap: 8,
-          background: 'var(--color-surface2)',
-          border: '1px solid var(--color-border)',
-          borderRadius: 10,
-          padding: '8px 12px',
-        }}>
-          <Search size={15} color="var(--color-muted)" />
-          <input
-            ref={inputRef}
-            type="text"
-            placeholder="Search exercises..."
-            value={query}
-            onChange={e => handleSearch(e.target.value)}
-            style={{
-              background: 'none',
-              border: 'none',
-              outline: 'none',
-              flex: 1,
-              fontSize: 15,
-              color: 'var(--color-text)',
-              padding: 0,
-              width: '100%',
-            }}
-          />
+        flexDirection: 'column',
+      }}
+    >
+      {/* Header: cancel, title, done-style confirm affordance */}
+      <div
+        className="glass"
+        style={{
+          flexShrink: 0,
+          paddingTop: 'env(safe-area-inset-top)',
+          borderBottom: '1px solid var(--color-border)',
+          borderRadius: 0,
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px 6px' }}>
+          <button onClick={onClose} className="hit" style={{ color: 'var(--color-accent-text)', fontSize: 'var(--type-body)' }}>
+            Cancel
+          </button>
+          <div style={{ flex: 1, textAlign: 'center', fontWeight: 600, fontSize: 'var(--type-headline)' }}>
+            Add Exercise
+          </div>
+          {/* Balances the Cancel button so the title stays optically centred. */}
+          <div style={{ width: 62 }} />
         </div>
+
+        {/* Search field */}
+        <div style={{ padding: '0 12px 10px' }}>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              background: 'var(--color-fill)',
+              borderRadius: 'var(--radius-sm)',
+              padding: '0 10px',
+              height: 'var(--hit-min)',
+            }}
+          >
+            <Search size={17} color="var(--color-muted)" style={{ flexShrink: 0 }} />
+            <input
+              ref={inputRef}
+              type="search"
+              enterKeyHint="search"
+              placeholder="Search 1,324 exercises"
+              aria-label="Search exercises"
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              style={{
+                background: 'none',
+                border: 'none',
+                padding: 0,
+                height: '100%',
+                fontSize: 'var(--type-callout)',
+                minWidth: 0,
+              }}
+            />
+            {query && (
+              <button onClick={() => setQuery('')} aria-label="Clear search" className="hit" style={{ width: 32, minHeight: 32 }}>
+                <X size={16} color="var(--color-muted)" />
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Body-part filter chips */}
+        <div
+          style={{
+            display: 'flex',
+            gap: 8,
+            overflowX: 'auto',
+            padding: '0 12px 10px',
+            scrollbarWidth: 'none',
+          }}
+        >
+          {facets.bodyParts.map(part => (
+            <button
+              key={part}
+              className="chip"
+              data-selected={bodyPart === part}
+              aria-pressed={bodyPart === part}
+              onClick={() => setBodyPart(bodyPart === part ? '' : part)}
+            >
+              {titleCase(part)}
+            </button>
+          ))}
+          <button
+            className="chip"
+            data-selected={showEquipment}
+            aria-expanded={showEquipment}
+            onClick={() => setShowEquipment(v => !v)}
+          >
+            Equipment <ChevronDown size={13} style={{ transform: showEquipment ? 'rotate(180deg)' : 'none' }} />
+          </button>
+        </div>
+
+        {showEquipment && (
+          <div
+            style={{
+              display: 'flex',
+              gap: 8,
+              overflowX: 'auto',
+              padding: '0 12px 10px',
+              scrollbarWidth: 'none',
+            }}
+          >
+            {facets.equipment.map(item => (
+              <button
+                key={item}
+                className="chip"
+                data-selected={equipment === item}
+                aria-pressed={equipment === item}
+                onClick={() => setEquipment(equipment === item ? '' : item)}
+              >
+                {titleCase(item)}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Result count keeps the list from feeling arbitrary when it is truncated. */}
+      <div
+        style={{
+          padding: '8px 16px 4px',
+          fontSize: 'var(--type-footnote)',
+          color: 'var(--color-muted)',
+          flexShrink: 0,
+        }}
+      >
+        {status === 'loading'
+          ? 'Loading exercises…'
+          : results.length === 0
+            ? 'No matches'
+            : hasFilters || query
+              ? `${results.length}${results.length === 60 ? '+' : ''} result${results.length === 1 ? '' : 's'}`
+              : `${results.length} of 1,324 — search or filter to narrow down`}
       </div>
 
       {/* Results */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '8px 12px' }}>
-        {loading && (
-          <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--color-muted)', fontSize: 14 }}>
-            Loading...
+      <div style={{ flex: 1, overflowY: 'auto', padding: '0 12px 16px', overscrollBehavior: 'contain' }}>
+        {status === 'ready' && results.length === 0 && (
+          <div
+            style={{
+              textAlign: 'center',
+              padding: '48px 24px',
+              color: 'var(--color-muted)',
+            }}
+          >
+            <Dumbbell size={36} style={{ opacity: 0.3, marginBottom: 12 }} />
+            <p style={{ margin: '0 0 4px', fontWeight: 600, color: 'var(--color-text)' }}>No exercises found</p>
+            <p style={{ margin: 0, fontSize: 'var(--type-subhead)' }}>
+              {query ? `Nothing matches “${query}”.` : 'Try a different filter.'}
+            </p>
           </div>
         )}
 
-        {!loading && results.length === 0 && (
-          <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--color-muted)', fontSize: 14 }}>
-            No exercises found for "{query}"
-          </div>
-        )}
-
-        {!loading && results.map(ex => {
-          const imageUrl = getImageUrl(ex.id)
-          const alreadyAdded = usedIds.includes(ex.id)
-
+        {results.map(ex => {
+          const alreadyAdded = used.has(ex.id)
           return (
-            <div
+            <button
               key={ex.id}
-              onClick={() => !alreadyAdded && onSelect({
-                id: ex.id,
-                name: ex.name,
-                muscle_group: ex.body_part,
-                image_url: imageUrl,
-                order: Date.now(),
-              })}
+              onClick={() => !alreadyAdded && onSelect(ex)}
+              disabled={alreadyAdded}
+              aria-label={alreadyAdded ? `${ex.name}, already added` : `Add ${ex.name}`}
               style={{
                 display: 'flex',
                 alignItems: 'center',
                 gap: 12,
+                width: '100%',
+                textAlign: 'left',
                 padding: '10px 8px',
-                borderRadius: 12,
-                marginBottom: 4,
+                borderRadius: 'var(--radius-md)',
+                marginBottom: 2,
+                opacity: alreadyAdded ? 0.45 : 1,
                 cursor: alreadyAdded ? 'default' : 'pointer',
-                opacity: alreadyAdded ? 0.4 : 1,
-                background: 'transparent',
-                transition: 'background 0.1s',
               }}
-              onMouseEnter={e => { if (!alreadyAdded) e.currentTarget.style.background = 'var(--color-surface)' }}
-              onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
             >
-              {/* Image */}
-              <div style={{
-                width: 56,
-                height: 56,
-                borderRadius: 10,
-                overflow: 'hidden',
-                background: 'var(--color-surface2)',
-                flexShrink: 0,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                border: '1px solid var(--color-border)',
-              }}>
-                <img
-                  src={imageUrl}
-                  alt={ex.name}
-                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                  loading="lazy"
-                  onError={e => {
-                    e.target.style.display = 'none'
-                    e.target.parentElement.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--color-border)" stroke-width="2"><path d="M6.5 6.5h.01M17.5 6.5h.01M6.5 17.5h.01M17.5 17.5h.01M3 12h1m16 0h1M12 3v1m0 16v1M18.364 5.636l-.707.707M6.343 17.657l-.707.707M18.364 18.364l-.707-.707M6.343 6.343l-.707-.707"/></svg>'
-                  }}
-                />
-              </div>
+              <span className="thumb" style={{ width: 52, height: 52 }}>
+                <img src={imageUrl(ex.image)} alt="" loading="lazy" decoding="async" />
+              </span>
 
-              {/* Info */}
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{
-                  fontWeight: 600,
-                  fontSize: 14,
-                  marginBottom: 4,
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                  textTransform: 'capitalize',
-                }}>
-                  {ex.name}
-                </div>
-                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                  <span style={{
-                    fontSize: 11,
-                    padding: '2px 7px',
-                    borderRadius: 20,
-                    background: `${tagColor(ex.body_part)}22`,
-                    color: tagColor(ex.body_part),
+              <span style={{ flex: 1, minWidth: 0 }}>
+                <span
+                  style={{
+                    display: 'block',
                     fontWeight: 600,
+                    fontSize: 'var(--type-subhead)',
+                    marginBottom: 5,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
                     textTransform: 'capitalize',
-                  }}>
-                    {ex.body_part}
+                  }}
+                >
+                  {ex.name}
+                </span>
+                <span style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  <span className="chip" style={{ minHeight: 22, fontSize: 'var(--type-min)' }}>
+                    {titleCase(ex.body_part)}
                   </span>
-                  <span style={{
-                    fontSize: 11,
-                    padding: '2px 7px',
-                    borderRadius: 20,
-                    background: 'var(--color-surface2)',
-                    color: 'var(--color-muted)',
-                    textTransform: 'capitalize',
-                  }}>
+                  <span
+                    className="chip"
+                    style={{ minHeight: 22, fontSize: 'var(--type-min)', textTransform: 'capitalize' }}
+                  >
                     {ex.equipment}
                   </span>
-                </div>
-              </div>
+                </span>
+              </span>
 
-              {alreadyAdded && (
-                <span style={{ fontSize: 11, color: 'var(--color-muted)', flexShrink: 0 }}>Added</span>
-              )}
-            </div>
+              {alreadyAdded && <Check size={18} color="var(--color-muted)" style={{ flexShrink: 0 }} />}
+            </button>
           )
         })}
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }

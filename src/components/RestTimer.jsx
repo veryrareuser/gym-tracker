@@ -1,6 +1,6 @@
 // src/components/RestTimer.jsx
 import { useState, useEffect, useRef } from 'react'
-import { X, Timer } from 'lucide-react'
+import { Timer, X } from 'lucide-react'
 import { getTimerState, clearTimer } from '../lib/timer'
 
 function formatTime(seconds) {
@@ -26,16 +26,12 @@ export default function RestTimer() {
       clearInterval(intervalRef.current)
       setTimerState(null)
       setFinished(true)
-      // Vibrate on finish
       if (navigator.vibrate) navigator.vibrate([200, 100, 200])
       setTimeout(() => setFinished(false), 2000)
     }
   }
 
   useEffect(() => {
-    // Re-read on mount in case timer was started on another tab / page
-    setTimerState(getTimerState())
-
     function onTimerStart() {
       setTimerState(getTimerState())
       clearInterval(intervalRef.current)
@@ -43,16 +39,16 @@ export default function RestTimer() {
     }
 
     window.addEventListener('gym_timer_start', onTimerStart)
-
-    // Start interval if timer already running
-    if (getTimerState()) {
-      intervalRef.current = setInterval(tick, 1000)
-    }
+    // The lazy useState initializer above already read localStorage, so this only
+    // needs to cover a timer that was started before this component mounted.
+    if (timerState) intervalRef.current = setInterval(tick, 1000)
 
     return () => {
       clearInterval(intervalRef.current)
       window.removeEventListener('gym_timer_start', onTimerStart)
     }
+    // timerState is read only for its initial presence check.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   function handleDismiss() {
@@ -62,108 +58,75 @@ export default function RestTimer() {
     setFinished(false)
   }
 
-  if (finished) {
-    return (
-      <div style={{
+  if (!finished && !timerState) return null
+
+  const remaining = timerState?.remaining ?? 0
+  const progress = timerState ? remaining / timerState.total : 0
+  const isLow = finished || remaining <= 10
+  const tone = isLow ? 'var(--color-danger-fill)' : 'var(--color-accent)'
+
+  return (
+    <div
+      // Sits directly above the tab bar, inside the same 520px column.
+      style={{
         position: 'fixed',
-        bottom: 64,
+        bottom: 'calc(var(--tab-bar-height) + env(safe-area-inset-bottom) + 8px)',
         left: '50%',
         transform: 'translateX(-50%)',
         width: '100%',
-        maxWidth: 480,
+        maxWidth: 520,
         zIndex: 200,
         padding: '0 12px',
         pointerEvents: 'none',
-      }}>
-        <div style={{
-          background: 'var(--color-danger)',
-          borderRadius: 12,
-          padding: '12px 16px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: 8,
-          color: '#fff',
-          fontWeight: 700,
-          fontSize: 14,
-          animation: 'timerFlash 0.4s ease',
-        }}>
-          <Timer size={16} /> Rest over — go!
-        </div>
-        <style>{`
-          @keyframes timerFlash {
-            0%,100% { opacity: 1; } 50% { opacity: 0.4; }
-          }
-        `}</style>
-      </div>
-    )
-  }
+      }}
+    >
+      <div
+        role="status"
+        aria-live="polite"
+        aria-label={finished ? 'Rest complete' : `Rest, ${formatTime(remaining)} remaining`}
+        className="glass"
+        style={{
+          borderRadius: 'var(--radius-md)',
+          overflow: 'hidden',
+          boxShadow: 'var(--shadow-float)',
+          pointerEvents: 'auto',
+        }}
+      >
+        {!finished && (
+          <div style={{ height: 3, background: 'var(--color-fill)' }}>
+            <div
+              style={{
+                height: '100%',
+                width: `${Math.max(0, progress) * 100}%`,
+                background: tone,
+                transition: 'width 0.9s linear',
+              }}
+            />
+          </div>
+        )}
 
-  if (!timerState) return null
-
-  const progress = timerState.remaining / timerState.total
-  const isLow = timerState.remaining <= 10
-
-  return (
-    <div style={{
-      position: 'fixed',
-      bottom: 64,
-      left: '50%',
-      transform: 'translateX(-50%)',
-      width: '100%',
-      maxWidth: 480,
-      zIndex: 200,
-      padding: '0 12px',
-    }}>
-      <div style={{
-        background: 'var(--color-surface)',
-        border: `1px solid ${isLow ? 'var(--color-danger)' : 'var(--color-border)'}`,
-        borderRadius: 12,
-        overflow: 'hidden',
-        boxShadow: '0 4px 20px rgba(0,0,0,0.4)',
-      }}>
-        {/* Progress bar */}
-        <div style={{
-          height: 3,
-          background: 'var(--color-surface2)',
-        }}>
-          <div style={{
-            height: '100%',
-            width: `${progress * 100}%`,
-            background: isLow ? 'var(--color-danger)' : 'var(--color-accent)',
-            transition: 'width 0.9s linear',
-          }} />
-        </div>
-
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          padding: '10px 14px',
-          gap: 10,
-        }}>
-          <Timer size={16} color={isLow ? 'var(--color-danger)' : 'var(--color-accent)'} />
-          <span style={{ fontSize: 13, color: 'var(--color-muted)', flex: 1 }}>Rest</span>
-          <span style={{
-            fontSize: 20,
-            fontWeight: 800,
-            fontVariantNumeric: 'tabular-nums',
-            color: isLow ? 'var(--color-danger)' : 'var(--color-text)',
-            letterSpacing: 1,
-          }}>
-            {formatTime(timerState.remaining)}
+        <div style={{ display: 'flex', alignItems: 'center', padding: '10px 8px 10px 14px', gap: 10 }}>
+          <Timer size={18} color={tone} style={{ flexShrink: 0 }} />
+          <span style={{ fontSize: 'var(--type-subhead)', color: 'var(--color-muted)', flex: 1 }}>
+            {finished ? 'Rest over — go!' : 'Resting'}
+          </span>
+          <span
+            className="tnum"
+            style={{
+              fontSize: 'var(--type-title)',
+              fontWeight: 700,
+              color: isLow ? 'var(--color-danger)' : 'var(--color-text)',
+            }}
+          >
+            {finished ? '0:00' : formatTime(remaining)}
           </span>
           <button
             onClick={handleDismiss}
-            style={{
-              background: 'none',
-              border: 'none',
-              color: 'var(--color-muted)',
-              padding: 4,
-              display: 'flex',
-              alignItems: 'center',
-            }}
+            aria-label="Dismiss rest timer"
+            className="hit"
+            style={{ width: 40, minHeight: 40, flexShrink: 0 }}
           >
-            <X size={16} />
+            <X size={18} color="var(--color-muted)" />
           </button>
         </div>
       </div>
