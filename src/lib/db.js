@@ -17,6 +17,28 @@ const cacheKey = (base, userId) => (userId ? `${base}:${userId}` : base)
 
 const LEGACY_KEYS = ['gym_exercises', 'gym_sessions', 'gym_draft']
 
+/**
+ * The bases actually passed to localSet/localGet, and so the keys that exist in
+ * storage as `${base}:${userId}`. Distinct from LEGACY_KEYS, which are the old
+ * unprefixed names read once during migration and then deleted.
+ */
+const CACHE_BASES = ['exercises', 'sessions', 'gym_draft']
+
+/**
+ * Drop a user's cached rows. Called on sign-out: namespacing already stops the next
+ * person *using* this data, but without this it would sit in localStorage on a shared
+ * device until that same account signed back in. Takes the id explicitly, because
+ * sign-out clears the in-memory user before a caller could ask for it.
+ */
+export function clearLocalCache(userId) {
+  if (!userId) return
+  try {
+    for (const base of CACHE_BASES) localStorage.removeItem(cacheKey(base, userId))
+  } catch {
+    /* storage unavailable, or a private-mode browser refusing writes */
+  }
+}
+
 /* ─── Local helpers ─── */
 function localGet(base) {
   const key = cacheKey(base, currentUserId())

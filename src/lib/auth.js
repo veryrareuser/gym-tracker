@@ -96,13 +96,19 @@ export function clearSession() {
 export async function signOut() {
   const token = readStoredToken()
   if (token) {
-    // Re-attach the token first so the RPC can identify which session row to
-    // delete, then tear the session down locally.
+    // Re-attach the token first so the RPC can identify which session row to delete.
     setSessionToken(token)
-    await supabase.rpc('logout', { p_token: token }).catch(() => {})
+    // try/catch, not .catch(): supabase.rpc() returns a PostgrestBuilder, which is
+    // thenable but is not a Promise and has no .catch method. Calling .catch() on it
+    // throws a TypeError synchronously, which aborted sign-out before it cleared
+    // anything — the button appeared to do nothing at all.
+    try {
+      await supabase.rpc('logout', { p_token: token })
+    } catch {
+      // Best effort. The local token is cleared below regardless, so a failure here
+      // only leaves a row in private.sessions that expires on its own.
+    }
   }
-  // Best effort: the local token is gone either way, so a failure here only leaves
-  // a row in private.sessions that expires on its own.
   clearSession()
 }
 
