@@ -1,16 +1,112 @@
 @import "tailwindcss";
 
+/*
+ * Design tokens.
+ *
+ * Contrast ratios below are computed from these hex values, not estimated.
+ * Text roles all clear WCAG AA 4.5:1 against every surface they are used on.
+ *
+ * Two values deviate from Apple's system palette on purpose, because the stock
+ * system colors do not pass AA on web surfaces:
+ *   - Apple's secondaryLabel (60% black) composites to #8A8A8E on white = 3.44:1.
+ *     --color-muted is darkened to #6B6B70 (5.30:1 on surface, 4.75:1 on bg).
+ *   - systemBlue #007AFF is 4.02:1 on white, so in light mode it is a FILL color
+ *     only. Small text uses --color-accent-text #0066CC (5.57:1).
+ */
+
 :root {
-  --color-bg: #0f0f0f;
-  --color-surface: #1a1a1a;
-  --color-surface2: #242424;
-  --color-border: #2e2e2e;
-  --color-text: #f0f0f0;
-  --color-muted: #888888;
-  --color-accent: #c8f135;
-  --color-accent-dim: rgba(200,241,53,0.12);
-  --color-danger: #ff4d4d;
-  --color-success: #4dff91;
+  color-scheme: light dark;
+
+  /* Surfaces — iOS grouped style */
+  --color-bg: #f2f2f7;
+  --color-surface: #ffffff;
+  --color-surface-raised: #ffffff;
+  --color-fill: rgba(120, 120, 128, 0.12);
+  --color-fill-strong: rgba(120, 120, 128, 0.2);
+  --color-border: rgba(60, 60, 67, 0.18);
+
+  /* Content */
+  --color-text: #000000;
+  --color-muted: #6b6b70;
+  --color-faint: #a1a1a6;
+
+  /* Accent — fill vs. text variants are separate because #007AFF fails AA as text */
+  --color-accent: #007aff;
+  --color-accent-text: #0066cc;
+  --color-accent-dim: rgba(0, 122, 255, 0.1);
+  --color-on-accent: #ffffff;
+
+  /* Signals */
+  --color-danger: #d70015;
+  --color-danger-fill: #ff3b30;
+  --color-success: #1e7f35;
+  --color-success-fill: #34c759;
+  --color-warning: #8a5100;
+  --color-warning-fill: #ff9500;
+
+  /* Floating material — tab bar, sheets, rest timer. Never used on content. */
+  --glass-bg: rgba(249, 249, 249, 0.72);
+  --glass-border: rgba(0, 0, 0, 0.08);
+  --glass-blur: saturate(180%) blur(20px);
+
+  /* Elevation */
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.04), 0 6px 20px rgba(0, 0, 0, 0.05);
+  --shadow-float: 0 2px 8px rgba(0, 0, 0, 0.08), 0 12px 32px rgba(0, 0, 0, 0.1);
+
+  /* Continuous corners */
+  --radius-sm: 10px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+  --radius-pill: 999px;
+
+  /* Type — 17px body, 11px floor (HIG mobile minimum) */
+  --type-large-title: 34px;
+  --type-title: 22px;
+  --type-headline: 17px;
+  --type-body: 17px;
+  --type-callout: 16px;
+  --type-subhead: 15px;
+  --type-footnote: 13px;
+  --type-caption: 12px;
+  --type-min: 11px;
+
+  /* Controls */
+  --hit-min: 44px;
+  --tab-bar-height: 49px;
+  --gutter: 16px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-bg: #000000;
+    --color-surface: #1c1c1e;
+    --color-surface-raised: #2c2c2e;
+    --color-fill: rgba(118, 118, 128, 0.24);
+    --color-fill-strong: rgba(118, 118, 128, 0.36);
+    --color-border: rgba(84, 84, 88, 0.6);
+
+    --color-text: #ffffff;
+    --color-muted: #98989f;
+    --color-faint: #6c6c70;
+
+    --color-accent: #0a84ff;
+    --color-accent-text: #0a84ff;
+    --color-accent-dim: rgba(10, 132, 255, 0.16);
+    --color-on-accent: #000000;
+
+    --color-danger: #ff453a;
+    --color-danger-fill: #ff453a;
+    --color-success: #30d158;
+    --color-success-fill: #30d158;
+    --color-warning: #ff9f0a;
+    --color-warning-fill: #ff9f0a;
+
+    --glass-bg: rgba(28, 28, 30, 0.72);
+    --glass-border: rgba(255, 255, 255, 0.1);
+
+    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --shadow-float: 0 2px 10px rgba(0, 0, 0, 0.6), 0 16px 40px rgba(0, 0, 0, 0.5);
+  }
 }
 
 * {
@@ -18,37 +114,217 @@
   box-sizing: border-box;
 }
 
+html {
+  background-color: var(--color-bg);
+}
+
 body {
+  margin: 0;
   background-color: var(--color-bg);
   color: var(--color-text);
-  font-family: -apple-system, "Segoe UI", system-ui, sans-serif;
-  font-size: 15px;
-  line-height: 1.6;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+  font-size: var(--type-body);
+  line-height: 1.45;
+  letter-spacing: -0.01em;
   overscroll-behavior: none;
+  -webkit-font-smoothing: antialiased;
 }
 
-input, textarea, select {
-  background: var(--color-surface2);
+input,
+textarea,
+select {
+  background: var(--color-fill);
   color: var(--color-text);
-  border: 1px solid var(--color-border);
-  border-radius: 10px;
-  padding: 10px 12px;
-  font-size: 15px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  padding: 11px 12px;
+  font-size: var(--type-body);
+  font-family: inherit;
   outline: none;
   width: 100%;
+  transition: border-color 0.15s;
 }
 
-input:focus, textarea:focus, select:focus {
+input::placeholder,
+textarea::placeholder {
+  color: var(--color-faint);
+}
+
+input:focus,
+textarea:focus,
+select:focus {
   border-color: var(--color-accent);
+  background: var(--color-surface);
+}
+
+input[type="date"] {
+  min-height: var(--hit-min);
 }
 
 button {
   cursor: pointer;
-  font-size: 15px;
+  font-size: var(--type-body);
   font-family: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  padding: 0;
 }
 
-/* Scrollbar */
-::-webkit-scrollbar { width: 4px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--color-border); border-radius: 4px; }
+button:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+/* Visible focus for keyboard and switch-control users. */
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* ─── Shared components ─── */
+
+/* Floating material. Glass on the functional layer, solid where unsupported. */
+.glass {
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .glass {
+    background: var(--color-surface);
+  }
+}
+
+.card {
+  background: var(--color-surface);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 32px;
+  padding: 0 12px;
+  border-radius: var(--radius-pill);
+  font-size: var(--type-caption);
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--color-muted);
+  background: var(--color-fill);
+}
+.chip[data-selected="true"] {
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+}
+
+.screen {
+  padding: 0 var(--gutter) calc(var(--tab-bar-height) + 40px + env(safe-area-inset-bottom));
+}
+
+.screen-title {
+  font-size: var(--type-large-title);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  margin: 0;
+}
+
+.section-label {
+  font-size: var(--type-footnote);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+  margin: 0 0 8px;
+}
+
+/* Every tappable row meets the 44pt minimum target. */
+.hit {
+  min-width: var(--hit-min);
+  min-height: var(--hit-min);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Tabular figures for weights, reps, and countdowns. */
+.tnum {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
+.thumb {
+  background: var(--color-fill);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 3px;
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  20%, 60% { transform: translateX(-8px); }
+  40%, 80% { transform: translateX(8px); }
+}
+
+@keyframes rise {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Motion is decorative here, so it is always safe to drop. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .glass {
+    background: var(--color-surface);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+@media (prefers-contrast: more) {
+  :root {
+    --color-muted: #545458;
+    --color-border: rgba(60, 60, 67, 0.4);
+  }
+}
+
+@media (prefers-contrast: more) {
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --color-muted: #c7c7cc;
+      --color-border: rgba(255, 255, 255, 0.4);
+    }
+  }
+}
