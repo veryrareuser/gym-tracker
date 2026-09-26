@@ -9,7 +9,7 @@ import History from './pages/History'
 import SessionDetail from './pages/SessionDetail'
 import Exercises from './pages/Exercises'
 import { syncFromCloud } from './lib/db'
-import { getSession, onAuthChange, signOut } from './lib/auth'
+import { restoreSession, signOut } from './lib/auth'
 
 // Recharts is the bulk of the bundle and only Progress needs it.
 const Analytics = lazy(() => import('./pages/Analytics'))
@@ -26,26 +26,24 @@ export default function App() {
 
   useEffect(() => {
     let cancelled = false
-    getSession().then(s => {
+    // The token model has no cross-tab sign-in event, so this runs once per load.
+    // It revalidates the stored token against the server rather than trusting
+    // localStorage, since a token can be revoked or expire while still on disk.
+    restoreSession().then(s => {
       if (cancelled) return
-      setSession(s)
-      setReady(true)
-    })
-    const unsubscribe = onAuthChange(s => {
       setSession(s)
       setReady(true)
     })
     return () => {
       cancelled = true
-      unsubscribe()
     }
   }, [])
 
   // Pull the signed-in user's data down once per session. RLS scopes the query, so
   // this only ever returns the caller's own rows.
   useEffect(() => {
-    if (session?.user?.id) syncFromCloud()
-  }, [session?.user?.id])
+    if (session?.userId) syncFromCloud()
+  }, [session?.userId])
 
   if (!ready) return <div style={{ minHeight: '100dvh', background: 'var(--canvas)' }} />
 
@@ -53,7 +51,7 @@ export default function App() {
     return (
       <SignIn
         onSignedIn={result => {
-          setSession({ user: result.user, username: result.username })
+          setSession(result)
         }}
       />
     )

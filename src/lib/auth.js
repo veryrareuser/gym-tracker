@@ -1,115 +1,115 @@
 // src/lib/auth.js
-// Session handling, and the username <-> email mapping.
+// Session handling on an opaque token, issued by public.login() in Postgres.
 //
-// Supabase Auth signs in with an email, but this product is username-only. Rather
-// than collect a real address that nobody wants to hand over, a username is mapped
-// to an undeliverable synthetic one. `.invalid` is permanently unregistrable
-// (RFC 2606), so mail to it can never be delivered, bounced into a real inbox, or
-// used to identify anyone.
+// Why not Supabase Auth: this project cannot reach the Supabase dashboard, and
+// every provisioning path through GoTrue needs it. The token model needs nothing
+// external — no dashboard, no email, no SMTP quota — and the credential cannot be
+// forged, because it is 32 random bytes compared as a SHA-256 hash in the
+// database rather than a self-describing token anyone could mint.
 //
-// The slug is derived from the project URL at runtime, so nothing about the
-// project is hardcoded here.
+// The token lives in localStorage and travels in the X-Session-Token header.
+// RLS resolves it, so the publishable key on its own grants nothing.
 
-import { supabase } from './supabaseClient'
+import { supabase, setSessionToken, isConfigured } from './supabaseClient'
 
-const PROJECT_SLUG = (() => {
-  const url = import.meta.env.VITE_SUPABASE_URL
-  if (!url) return 'gym.invalid'
-  try {
-    return new URL(url).hostname.split('.')[0]
-  } catch {
-    return 'gym.invalid'
-  }
-})()
-
-const SYNTHETIC_DOMAIN = `${PROJECT_SLUG}.invalid`
+const TOKEN_KEY = 'gym_token'
 
 export const USERNAME_RE = /^[a-z0-9_]{3,20}$/
 
-/** "carlo" -> "carlo@riogpgsstcafsvhikjhg.invalid" */
-export function emailForUsername(username) {
-  return `${username.toLowerCase()}@${SYNTHETIC_DOMAIN}`
+// Cached so write paths can stamp user_id synchronously and components can read the
+// display name without prop drilling through the router Outlet. Set before the first
+// render that needs it, so no component observes a stale value.
+let _accountId = null
+let _username = null
+
+function readStoredToken() {
+  try {
+    return localStorage.getItem(TOKEN_KEY)
+  } catch {
+    return null
+  }
 }
 
-/** Inverse of emailForUsername, tolerant of a non-synthetic address. */
-export function usernameFromEmail(email) {
-  if (!email) return null
-  const [local, domain] = String(email).split('@')
-  if (!local || domain !== SYNTHETIC_DOMAIN) return local || null
-  return local
+/** Rebuild the Supabase client around a token, or clear it. */
+function applyToken(token) {
+  setSessionToken(token)
+  if (!token) {
+    _accountId = null
+    _username = null
+  }
+}
+
+/**
+ * Restore a session on load and confirm the token is still valid server-side.
+ * A token can be revoked or expire, so localStorage alone is not trusted: without
+ * this check the app would render signed-in chrome and then fail every query.
+ */
+export async function restoreSession() {
+  const token = readStoredToken()
+  if (!token || !isConfigured) return null
+  applyToken(token)
+  const { data, error } = await supabase.rpc('whoami')
+  if (error || !data || data.length === 0) {
+    clearSession()
+    return null
+  }
+  const row = Array.isArray(data) ? data[0] : data
+  _accountId = row.user_id
+  _username = row.username
+  return { userId: row.user_id, username: row.username }
 }
 
 export async function signIn(username, password) {
-  if (!supabase) return { error: 'This build has no database configured.' }
+  if (!isConfigured) return { error: 'This build has no database configured.' }
   const clean = String(username || '').trim().toLowerCase()
   if (!USERNAME_RE.test(clean)) {
     return { error: 'Username must be 3-20 characters: a-z, 0-9, or underscore.' }
   }
-  const { data, error } = await supabase.auth.signInWithPassword({
-    email: emailForUsername(clean),
-    password,
-  })
-  if (error) return { error: error.message }
-  return { user: data.user, username: usernameFromEmail(data.user?.email) || clean }
+  applyToken(null)
+  const { data, error } = await supabase.rpc('login', { p_username: clean, p_password: password })
+  if (error) return { error: 'Invalid username or password.' }
+  if (!data) return { error: 'Sign-in failed.' }
+
+  try {
+    localStorage.setItem(TOKEN_KEY, data)
+  } catch {
+    return { error: 'Could not save the session in this browser.' }
+  }
+  applyToken(data)
+
+  const { data: me } = await supabase.rpc('whoami')
+  const row = Array.isArray(me) ? me[0] : me
+  _accountId = row?.user_id ?? null
+  _username = clean
+  return { userId: _accountId, username: clean }
+}
+
+export function clearSession() {
+  try {
+    localStorage.removeItem(TOKEN_KEY)
+  } catch {
+    /* storage unavailable; the in-memory session is still cleared below */
+  }
+  applyToken(null)
 }
 
 export async function signOut() {
-  if (!supabase) return { error: null }
-  return supabase.auth.signOut()
+  const token = readStoredToken()
+  if (token) {
+    // Re-attach the token first so the RPC can identify which session row to
+    // delete, then tear the session down locally.
+    setSessionToken(token)
+    await supabase.rpc('logout', { p_token: token }).catch(() => {})
+  }
+  // Best effort: the local token is gone either way, so a failure here only leaves
+  // a row in private.sessions that expires on its own.
+  clearSession()
 }
 
-// Cached so write paths can stamp user_id synchronously. supabase.auth.getUser()
-// is async and returns a promise, so it cannot be used inline in a query builder.
-// The username is cached alongside it so a component that only needs the display
-// name (the leaderboard's "this row is yours" highlight) can read it without prop
-// drilling through the router Outlet.
-let _userId = null
-let _username = null
-
-/** Current session, or null. */
-export async function getSession() {
-  if (!supabase) {
-    _userId = null
-    _username = null
-    return null
-  }
-  const { data, error } = await supabase.auth.getSession()
-  if (error || !data.session?.user) {
-    _userId = null
-    _username = null
-    return null
-  }
-  const user = data.session.user
-  _userId = user.id
-  _username = usernameFromEmail(user.email)
-  return { user, username: _username || user.id.slice(0, 8) }
-}
-
-/**
- * The current user id, for stamping writes. Null when signed out.
- *
- * Every write path in db.js must bail on null rather than send a null user_id —
- * the RLS `with check` clause rejects it anyway, and failing explicitly is easier
- * to diagnose than a silent no-op.
- */
 export function currentUserId() {
-  return _userId
+  return _accountId
 }
 
 export function currentUsername() {
   return _username
-}
-
-/**
- * Subscribe to session changes. Keeps the cache in step and notifies the app.
- * Returns an unsubscribe function.
- */
-export function onAuthChange(callback) {
-  if (!supabase) return () => {}
-  const { data } = supabase.auth.onAuthStateChange((_event, session) => {
-    _userId = session?.user?.id ?? null
-    _username = usernameFromEmail(session?.user?.email) ?? null
-    callback(session ? { user: session.user, username: _username } : null)
-  })
-  return () => data.subscription.unsubscribe()
 }
