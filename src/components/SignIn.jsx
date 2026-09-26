@@ -1,9 +1,13 @@
 // src/components/SignIn.jsx
 import { useState, useRef, useEffect } from 'react'
-import { Lock, User } from 'lucide-react'
+import { Lock, User, Info } from 'lucide-react'
 import { signIn, USERNAME_RE } from '../lib/auth'
 
-export default function SignIn({ onSignedIn }) {
+// `notice` explains why the user is here when it was not their first visit — most
+// often an expired session. It is deliberately distinct from `error`: an error is
+// something the user did wrong and can fix by retyping, while this needs no action
+// beyond signing in again. Rendering both together would read as a failure.
+export default function SignIn({ onSignedIn, notice }) {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState(null)
@@ -72,6 +76,27 @@ export default function SignIn({ onSignedIn }) {
         <p style={{ color: 'var(--ink-muted)', margin: '0 0 32px', fontSize: 'var(--type-subhead)', textAlign: 'center' }}>
           Sign in to your account
         </p>
+
+        {notice && !error && (
+          <div
+            role="status"
+            style={{
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: 8,
+              background: 'var(--primary-wash)',
+              color: 'var(--ink)',
+              borderRadius: 'var(--rounded-md)',
+              padding: '10px 12px',
+              margin: '0 0 20px',
+              fontSize: 'var(--type-subhead)',
+              lineHeight: 1.35,
+            }}
+          >
+            <Info size={16} color="var(--primary)" style={{ flexShrink: 0, marginTop: 1 }} />
+            <span>{notice}</span>
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} style={{ animation: shake ? 'shake 0.4s ease' : 'none' }}>
           <label

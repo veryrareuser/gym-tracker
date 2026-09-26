@@ -93,6 +93,35 @@ export function clearSession() {
   applyToken(null)
 }
 
+/**
+ * Ask the server whether the stored token is still good.
+ *
+ * This exists because a dead token is silent. RLS resolves an expired or revoked token
+ * to NULL, which makes every query return zero rows and no error — so a long-open tab
+ * would show an empty dashboard that is indistinguishable from a genuine "no workouts
+ * yet". Row counts cannot distinguish those two cases; only the server can.
+ *
+ * The three-way result matters. A network error means we do not know, and the caller
+ * must not sign the user out over a dropped connection.
+ *
+ * @returns {Promise<'valid'|'expired'|'unknown'>}
+ */
+export async function verifySession() {
+  if (!isConfigured || !supabase) return 'unknown'
+  const { data, error } = await supabase.rpc('whoami')
+  if (error) return 'unknown'
+  const row = Array.isArray(data) ? data[0] : data
+  if (!row) {
+    // A definitive empty response: the token is expired, revoked, or was deleted when
+    // the password was reset. Drop it so we are not left holding a dead credential.
+    clearSession()
+    return 'expired'
+  }
+  _accountId = row.user_id
+  _username = row.username
+  return 'valid'
+}
+
 export async function signOut() {
   const token = readStoredToken()
   if (token) {

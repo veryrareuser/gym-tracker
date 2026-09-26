@@ -14,7 +14,9 @@
     "verify:lockdown": "node scripts/verify-lockdown.mjs",
     "predeploy": "npm run build",
     "deploy": "gh-pages -d dist",
-    "verify:auth": "node scripts/verify-auth-flow.mjs"
+    "verify:auth": "node scripts/verify-auth-flow.mjs",
+    "verify:expiry": "node scripts/verify-session-expiry.mjs",
+    "verify:isolation": "node scripts/verify-isolation.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.116.0",

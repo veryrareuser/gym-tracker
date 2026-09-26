@@ -11,7 +11,8 @@
 // Asserting "must be 4xx" would pass for the wrong reason and would break the day
 // Postgres started returning an empty result instead of an error.
 //
-// Tests that need a real session token live in `create-account.mjs --selftest`.
+// Tests that need real signed-in accounts live in verify-isolation.mjs (two accounts,
+// cross-account isolation) and verify-auth-flow.mjs (a real browser, sign in and out).
 
 const base = process.env.SB_URL
 const key = process.env.SB_KEY
