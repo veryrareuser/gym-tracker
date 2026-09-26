@@ -2,11 +2,15 @@
 -- Run this in your Supabase SQL editor (https://app.supabase.com → SQL Editor)
 
 -- 1. Exercises (master list)
+-- "order" is bigint, not integer: new exercises are appended with Date.now() so the
+-- newest sorts last without a read-before-write. Date.now() is ~1.79e12 and does not
+-- fit in an integer (max 2147483647), which made every save of a new exercise fail
+-- with "value ... is out of range for type integer".
 create table if not exists exercises (
   id text primary key,
   name text not null,
   muscle_group text,
-  "order" integer default 0,
+  "order" bigint default 0,
   created_at timestamptz default now()
 );
 
@@ -38,6 +42,7 @@ create table if not exists set_entries (
 
 -- Indexes for common queries
 create index if not exists idx_exercise_logs_session on exercise_logs(session_id);
+create index if not exists idx_exercise_logs_exercise on exercise_logs(exercise_id);
 create index if not exists idx_set_entries_log on set_entries(exercise_log_id);
 create index if not exists idx_sessions_date on workout_sessions(date desc);
 
@@ -66,3 +71,18 @@ insert into exercises (id, name, muscle_group, "order") values
   ('9', 'Bicep Curl', 'Arms', 9),
   ('10', 'Hammer Curl', 'Arms', 10)
 on conflict (id) do nothing;
+
+-- image_url is written by the app on every save. Seeded rows need it populated or
+-- every Log and SessionDetail card renders without a thumbnail, because
+-- getExercises() prefers Supabase over localStorage. The dataset image paths are in
+-- src/lib/exerciseDb.js -> DEFAULT_EXERCISE_IMAGE_MAP.
+update exercises set image_url = 'https://raw.githubusercontent.com/hasaneyldrm/exercises-dataset/refs/heads/main/images/0289-SpYC0Kp.jpg' where id = '1' and image_url is null;
+update exercises set image_url = 'https://raw.githubusercontent.com/hasaneyldrm/exercises-dataset/refs/heads/main/images/0314-ns0SIbU.jpg' where id = '2' and image_url is null;
+update exercises set image_url = 'https://raw.githubusercontent.com/hasaneyldrm/exercises-dataset/refs/heads/main/images/0405-znQUdHY.jpg' where id = '3' and image_url is null;
+update exercises set image_url = 'https://raw.githubusercontent.com/hasaneyldrm/exercises-dataset/refs/heads/main/images/2330-LEprlgG.jpg' where id = '4' and image_url is null;
+update exercises set image_url = 'https://raw.githubusercontent.com/hasaneyldrm/exercises-dataset/refs/heads/main/images/0160-veXwo0D.jpg' where id = '5' and image_url is null;
+update exercises set image_url = 'https://raw.githubusercontent.com/hasaneyldrm/exercises-dataset/refs/heads/main/images/0159-kesXOpB.jpg' where id = '6' and image_url is null;
+update exercises set image_url = 'https://raw.githubusercontent.com/hasaneyldrm/exercises-dataset/refs/heads/main/images/0178-goJ6ezq.jpg' where id = '7' and image_url is null;
+update exercises set image_url = 'https://raw.githubusercontent.com/hasaneyldrm/exercises-dataset/refs/heads/main/images/0173-Hx1WC8I.jpg' where id = '8' and image_url is null;
+update exercises set image_url = 'https://raw.githubusercontent.com/hasaneyldrm/exercises-dataset/refs/heads/main/images/1634-otqIxU4.jpg' where id = '9' and image_url is null;
+update exercises set image_url = 'https://raw.githubusercontent.com/hasaneyldrm/exercises-dataset/refs/heads/main/images/0165-HPlPoQA.jpg' where id = '10' and image_url is null;

@@ -13,7 +13,6 @@ const testExerciseId = `zz-test-${stamp}`
 const testSessionId = `zz-test-session-${stamp}`
 const testLogId = `zz-test-log-${stamp}`
 const testSetId = `zz-test-set-${stamp}`
-
 async function req(method, table, opts = {}) {
   const url = `${URL_BASE}/rest/v1/${table}${opts.query || ''}`
   const res = await fetch(url, {
@@ -106,6 +105,37 @@ async function main() {
   const seeded = await req('get', 'exercises', { query: '?id=in.(1,2,3,4,5,6,7,8,9,10)&select=id,image_url' })
   const withImage = (Array.isArray(seeded.data) ? seeded.data : []).filter(r => r.image_url).length
   check('all 10 seeded exercises carry an image_url', withImage === 10, `${withImage}/10`)
+
+  // Regression guard: new exercises are appended with order = Date.now() so the
+  // newest sorts last without a read-before-write. That is ~1.79e12, which overflows
+  // an integer column (max 2147483647) and made every save of a new exercise fail with
+  // 'value ... is out of range for type integer'. exercises.order must be bigint.
+  console.log('\n--- 6. exercises.order accepts a Date.now() sort key ---')
+  const orderedId = `zz-order-${stamp}`
+  const ordered = await req('post', 'exercises', {
+    body: { id: orderedId, name: 'ZZ Order Probe', muscle_group: 'Arms', order: stamp },
+    prefer: 'return=minimal',
+  })
+  check('insert with order = Date.now() is accepted', ordered.status < 300, `HTTP ${ordered.status} ${JSON.stringify(ordered.data || '')}`.slice(0, 140))
+
+  const back = await req('get', 'exercises', { query: `?id=eq.${orderedId}&select=id,order` })
+  const probe = Array.isArray(back.data) ? back.data[0] : null
+  check('order round-trips as a JSON number, not a string', typeof probe?.order === 'number', `typeof = ${typeof probe?.order}`)
+  check('order round-trips exactly (no float precision loss)', probe?.order === stamp, `${probe?.order} vs ${stamp}`)
+
+  // The Exercises tab sorts with (a.order ?? 0) - (b.order ?? 0), so the value has to
+  // behave as a number both server-side and client-side.
+  const listed = await req('get', 'exercises', { query: '?select=id,order&order=order' })
+  const rows = Array.isArray(listed.data) ? listed.data : []
+  check('new exercise sorts last among the seeded rows', rows[rows.length - 1]?.id === orderedId, `last = ${rows[rows.length - 1]?.id}`)
+  const clientSorted = [...rows].sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+  check('client-side numeric sort agrees', clientSorted[clientSorted.length - 1]?.id === orderedId)
+  check(
+    'max bigint is not silently clamped',
+    rows.some(r => r.order === stamp),
+  )
+
+  await req('delete', 'exercises', { query: `?id=eq.${orderedId}`, prefer: 'return=minimal' })
 }
 
 main()
