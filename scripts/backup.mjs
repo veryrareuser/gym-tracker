@@ -14,7 +14,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { createInterface } from 'node:readline'
+import { readHidden } from './lib/hidden-prompt.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const outDir = resolve(here, '../backups')
@@ -27,25 +27,6 @@ if (!base || !key) {
   console.error('  $env:SB_URL  = "https://<project>.supabase.co"')
   console.error('  $env:SB_KEY  = "<publishable key>"')
   process.exit(1)
-}
-
-function readHidden(question) {
-  return new Promise(done => {
-    const rl = createInterface({ input: process.stdin, output: process.stdout, terminal: true })
-    process.stdout.write(question)
-    const onData = ch => {
-      const s = String(ch)
-      if (s === '\n' || s === '\r' || s === '') {
-        process.stdin.removeListener('data', onData)
-        const typed = rl.line.replace(/[^\x20-\x7E]/g, '')
-        rl.close()
-        process.stdout.write('\n')
-        done(typed)
-      }
-    }
-    process.stdin.on('data', onData)
-    rl.question('', () => {})
-  })
 }
 
 // Prefer a token that is already in hand. Otherwise sign in, so the script works

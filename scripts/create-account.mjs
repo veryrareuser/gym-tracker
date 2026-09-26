@@ -15,10 +15,10 @@
 
 import { createClient } from '@supabase/supabase-js'
 import { readFileSync, existsSync } from 'node:fs'
-import { createInterface } from 'node:readline'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
+import { readHidden } from './lib/hidden-prompt.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 
@@ -43,26 +43,6 @@ if (!url || !key) {
 }
 
 const USERNAME_RE = /^[a-z0-9_]{3,20}$/
-
-function readHidden(question) {
-  return new Promise(resolvePromise => {
-    const rl = createInterface({ input: process.stdin, output: process.stdout, terminal: true })
-    process.stdout.write(question)
-    const onData = char => {
-      const s = String(char)
-      if (s === '\n' || s === '\r' || s === '') {
-        process.stdin.removeListener('data', onData)
-        const typed = rl.line.replace(/[^\x20-\x7E]/g, '')
-        rl.close()
-        process.stdout.write('\n')
-        resolvePromise(typed)
-      }
-      // Any other key is swallowed so nothing is echoed to the terminal.
-    }
-    process.stdin.on('data', onData)
-    rl.question('', () => {})
-  })
-}
 
 function client(token) {
   return createClient(url, key, {
