@@ -34,16 +34,17 @@ function CalendarGrid({ year, month, sessionsByDate, onDayClick }) {
             className="tnum"
             style={{
               aspectRatio: '1',
-              borderRadius: 'var(--radius-sm)',
+              borderRadius: 'var(--rounded-sm)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              fontSize: 'var(--type-footnote)',
-              fontWeight: hasSession ? 700 : 400,
-              background: hasSession ? 'var(--color-accent)' : 'transparent',
-              color: hasSession ? 'var(--color-on-accent)' : 'var(--color-muted)',
-              boxShadow: isToday ? 'inset 0 0 0 2px var(--color-accent)' : 'none',
-              opacity: hasSession ? 1 : 1,
+              minHeight: 0,
+              fontSize: 'var(--type-subhead)',
+              fontWeight: hasSession ? 600 : 400,
+              // configurator-option-chip-selected: the spec's own selection cue
+              background: hasSession ? 'var(--primary)' : 'var(--surface)',
+              color: hasSession ? 'var(--on-primary)' : 'var(--ink-muted)',
+              border: isToday ? '2px solid var(--primary-focus)' : '1px solid var(--line)',
             }}
           >
             {day}
@@ -119,13 +120,13 @@ export default function History() {
       <section className="card" style={{ padding: 12, marginBottom: 24 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
           <button onClick={() => shiftMonth(-1)} aria-label="Previous month" className="hit">
-            <ChevronLeft size={20} color="var(--color-accent-text)" />
+            <ChevronLeft size={20} color="var(--primary)" />
           </button>
-          <span style={{ fontWeight: 600, fontSize: 'var(--type-headline)' }}>
+          <span style={{ fontWeight: 600, fontSize: 'var(--type-headline)', letterSpacing: 'var(--tracking-headline)' }}>
             {MONTH_LABELS[calMonth]} {calYear}
           </span>
           <button onClick={() => shiftMonth(1)} aria-label="Next month" className="hit">
-            <ChevronRight size={20} color="var(--color-accent-text)" />
+            <ChevronRight size={20} color="var(--primary)" />
           </button>
         </div>
 
@@ -136,8 +137,8 @@ export default function History() {
               key={i}
               style={{
                 textAlign: 'center',
-                fontSize: 'var(--type-min)',
-                color: 'var(--color-muted)',
+                fontSize: 'var(--type-fine)',
+                color: 'var(--ink-muted)',
                 fontWeight: 600,
                 paddingBottom: 4,
               }}
@@ -157,8 +158,8 @@ export default function History() {
 
       {sessions.length === 0 && (
         <div className="card" style={{ padding: '48px 24px', textAlign: 'center' }}>
-          <Dumbbell size={36} color="var(--color-faint)" style={{ marginBottom: 10 }} />
-          <p style={{ margin: 0, color: 'var(--color-muted)', fontSize: 'var(--type-subhead)' }}>
+          <Dumbbell size={36} color="var(--ink-faint)" style={{ marginBottom: 10 }} />
+          <p style={{ margin: 0, color: 'var(--ink-muted)', fontSize: 'var(--type-subhead)' }}>
             No sessions logged yet.
           </p>
         </div>
@@ -186,8 +187,8 @@ export default function History() {
                       style={{
                         width: 46,
                         height: 46,
-                        borderRadius: 'var(--radius-sm)',
-                        background: 'var(--color-accent-dim)',
+                        borderRadius: 'var(--rounded-sm)',
+                        background: 'var(--primary-wash)',
                         display: 'flex',
                         flexDirection: 'column',
                         alignItems: 'center',
@@ -195,10 +196,10 @@ export default function History() {
                         flexShrink: 0,
                       }}
                     >
-                      <span style={{ fontSize: 'var(--type-headline)', fontWeight: 700, lineHeight: 1, color: 'var(--color-accent-text)' }}>
+                      <span style={{ fontSize: 'var(--type-headline)', fontWeight: 600, lineHeight: 1, color: 'var(--primary)' }}>
                         {Number(session.date.slice(8))}
                       </span>
-                      <span style={{ fontSize: 'var(--type-min)', color: 'var(--color-accent-text)', textTransform: 'uppercase' }}>
+                      <span style={{ fontSize: 'var(--type-fine)', color: 'var(--primary)', textTransform: 'uppercase' }}>
                         {new Date(session.date + 'T00:00:00').toLocaleDateString('en-GB', { month: 'short' })}
                       </span>
                     </div>
@@ -209,8 +210,8 @@ export default function History() {
                       </div>
                       <div
                         style={{
-                          fontSize: 'var(--type-footnote)',
-                          color: 'var(--color-muted)',
+                          fontSize: 'var(--type-subhead)',
+                          color: 'var(--ink-muted)',
                           whiteSpace: 'nowrap',
                           overflow: 'hidden',
                           textOverflow: 'ellipsis',
@@ -222,10 +223,10 @@ export default function History() {
                     </div>
 
                     <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                      <div className="tnum" style={{ fontWeight: 700, fontSize: 'var(--type-subhead)', color: 'var(--color-accent-text)' }}>
+                      <div className="tnum" style={{ fontWeight: 600, fontSize: 'var(--type-subhead)', color: 'var(--primary)' }}>
                         {Math.round(calcVolume(session))} kg
                       </div>
-                      <div style={{ fontSize: 'var(--type-caption)', color: 'var(--color-muted)' }}>
+                      <div style={{ fontSize: 'var(--type-fine)', color: 'var(--ink-muted)' }}>
                         {session.exercise_logs?.length || 0} ex
                       </div>
                     </div>
@@ -234,10 +235,10 @@ export default function History() {
                   <button
                     onClick={() => setPendingDelete(session)}
                     aria-label={`Delete session from ${session.date}`}
-                    className="hit"
-                    style={{ width: 40, alignSelf: 'stretch', borderLeft: '1px solid var(--color-border)' }}
+                    className="btn-icon"
+                    style={{ alignSelf: 'stretch', borderLeft: '1px solid var(--line)' }}
                   >
-                    <Trash2 size={16} color="var(--color-danger)" />
+                    <Trash2 size={16} color="var(--destructive)" />
                   </button>
                 </div>
               )

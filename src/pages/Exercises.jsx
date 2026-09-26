@@ -26,7 +26,11 @@ function ExerciseForm({ initial, onSave, onCancel }) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="card" style={{ padding: 14, marginBottom: 12, border: '1px solid var(--color-accent)' }}>
+    <form
+      onSubmit={handleSubmit}
+      className="card"
+      style={{ padding: 17, marginBottom: 12, border: '2px solid var(--primary-focus)' }}
+    >
       <label htmlFor="ex-name" className="section-label">
         Name
       </label>
@@ -36,12 +40,12 @@ function ExerciseForm({ initial, onSave, onCancel }) {
         value={name}
         onChange={e => setName(e.target.value)}
         autoFocus
-        style={{ marginBottom: 10 }}
+        style={{ marginBottom: 12 }}
       />
       <label htmlFor="ex-muscle" className="section-label">
         Muscle group
       </label>
-      <select id="ex-muscle" value={muscle} onChange={e => setMuscle(e.target.value)} style={{ marginBottom: 14 }}>
+      <select id="ex-muscle" value={muscle} onChange={e => setMuscle(e.target.value)} style={{ marginBottom: 17 }}>
         <option value="">None</option>
         {MUSCLE_GROUPS.map(g => (
           <option key={g} value={g}>
@@ -50,31 +54,11 @@ function ExerciseForm({ initial, onSave, onCancel }) {
         ))}
       </select>
       <div style={{ display: 'flex', gap: 8 }}>
-        <button
-          type="submit"
-          style={{
-            flex: 1,
-            minHeight: 'var(--hit-min)',
-            background: 'var(--color-accent)',
-            color: 'var(--color-on-accent)',
-            fontWeight: 600,
-            borderRadius: 'var(--radius-sm)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: 6,
-          }}
-        >
+        <button type="submit" className="btn-primary" style={{ flex: 1 }}>
           <Check size={18} /> {initial ? 'Update' : 'Add'}
         </button>
-        <button
-          type="button"
-          onClick={onCancel}
-          aria-label="Cancel"
-          className="hit"
-          style={{ width: 'var(--hit-min)' }}
-        >
-          <X size={18} color="var(--color-muted)" />
+        <button type="button" onClick={onCancel} aria-label="Cancel" className="btn-icon">
+          <X size={18} color="var(--ink-muted)" />
         </button>
       </div>
     </form>
@@ -157,7 +141,7 @@ export default function Exercises() {
           paddingBottom: 16,
         }}
       >
-        <h1 className="screen-title" style={{ fontSize: 'var(--type-title)' }}>
+        <h1 className="screen-title" style={{ fontSize: 'var(--type-title)', letterSpacing: 'var(--tracking-title)' }}>
           Exercises
         </h1>
         <button
@@ -165,18 +149,8 @@ export default function Exercises() {
             setEditing(null)
             setShowForm(v => !v)
           }}
-          style={{
-            minHeight: 36,
-            padding: '0 14px',
-            borderRadius: 'var(--radius-pill)',
-            background: 'var(--color-accent)',
-            color: 'var(--color-on-accent)',
-            fontWeight: 600,
-            fontSize: 'var(--type-subhead)',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-          }}
+          className="btn-primary"
+          style={{ fontSize: 'var(--type-subhead)', padding: '8px 16px' }}
         >
           <Plus size={16} /> Custom
         </button>
@@ -190,12 +164,12 @@ export default function Exercises() {
             gap: 10,
             padding: 12,
             marginBottom: 12,
-            borderRadius: 'var(--radius-md)',
-            background: 'var(--color-fill)',
-            borderLeft: '3px solid var(--color-danger)',
+            borderRadius: 'var(--rounded-md)',
+            background: 'var(--fill)',
+            borderLeft: '3px solid var(--destructive)',
           }}
         >
-          <CircleAlert size={18} color="var(--color-danger)" style={{ flexShrink: 0, marginTop: 1 }} />
+          <CircleAlert size={18} color="var(--destructive)" style={{ flexShrink: 0, marginTop: 1 }} />
           <span style={{ fontSize: 'var(--type-subhead)' }}>{error}</span>
         </div>
       )}
@@ -203,20 +177,8 @@ export default function Exercises() {
       {showForm && <ExerciseForm onSave={handleSave} onCancel={() => setShowForm(false)} />}
       {editing && <ExerciseForm initial={editing} onSave={handleSave} onCancel={() => setEditing(null)} />}
 
-      <button
-        onClick={() => setShowPicker(true)}
-        style={{
-          width: '100%',
-          minHeight: 'var(--hit-min)',
-          borderRadius: 'var(--radius-md)',
-          border: '1px dashed var(--color-border)',
-          color: 'var(--color-accent-text)',
-          fontSize: 'var(--type-subhead)',
-          fontWeight: 500,
-          marginBottom: 16,
-        }}
-      >
-        <ListChecks size={17} style={{ verticalAlign: -3, marginRight: 6 }} />
+      <button onClick={() => setShowPicker(true)} className="btn-secondary btn-block" style={{ marginBottom: 16 }}>
+        <ListChecks size={17} />
         Browse the exercise library
       </button>
 
@@ -230,8 +192,8 @@ export default function Exercises() {
 
       {sorted.length === 0 && !showForm && (
         <div className="card" style={{ padding: '48px 24px', textAlign: 'center' }}>
-          <Dumbbell size={36} color="var(--color-faint)" style={{ marginBottom: 10 }} />
-          <p style={{ margin: 0, color: 'var(--color-muted)', fontSize: 'var(--type-subhead)' }}>
+          <Dumbbell size={36} color="var(--ink-faint)" style={{ marginBottom: 10 }} />
+          <p style={{ margin: 0, color: 'var(--ink-muted)', fontSize: 'var(--type-subhead)' }}>
             No exercises yet. Add one from the library or create your own.
           </p>
         </div>
@@ -239,22 +201,34 @@ export default function Exercises() {
 
       {sorted.map(ex => (
         <div key={ex.id} className="card" style={{ display: 'flex', alignItems: 'center', marginBottom: 8, overflow: 'hidden' }}>
-          <span className="thumb" style={{ width: 44, height: 44, margin: 10, borderRadius: 'var(--radius-sm)' }}>
-            {ex.image_url ? <img src={ex.image_url} alt="" loading="lazy" decoding="async" /> : <Dumbbell size={18} color="var(--color-faint)" />}
+          <span className="thumb" style={{ width: 44, height: 44, margin: 10, borderRadius: 'var(--rounded-sm)' }}>
+            {ex.image_url ? <img src={ex.image_url} alt="" loading="lazy" decoding="async" /> : <Dumbbell size={18} color="var(--ink-faint)" />}
           </span>
-          <div style={{ flex: 1, minWidth: 0, padding: '10px 0' }}>
-            <div style={{ fontWeight: 500, fontSize: 'var(--type-subhead)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <div style={{ flex: 1, minWidth: 0, padding: '12px 0' }}>
+            <div style={{ fontWeight: 600, fontSize: 'var(--type-subhead)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {ex.name}
             </div>
             {ex.muscle_group && (
-              <div style={{ fontSize: 'var(--type-footnote)', color: 'var(--color-muted)' }}>{ex.muscle_group}</div>
+              <div style={{ fontSize: 'var(--type-fine)', color: 'var(--ink-muted)' }}>{ex.muscle_group}</div>
             )}
           </div>
-          <button onClick={() => { setShowForm(false); setEditing(ex) }} aria-label={`Edit ${ex.name}`} className="hit" style={{ width: 40 }}>
-            <Pencil size={16} color="var(--color-muted)" />
+          <button
+            onClick={() => {
+              setShowForm(false)
+              setEditing(ex)
+            }}
+            aria-label={`Edit ${ex.name}`}
+            className="btn-icon"
+          >
+            <Pencil size={16} color="var(--ink-muted)" />
           </button>
-          <button onClick={() => setPendingDelete(ex)} aria-label={`Remove ${ex.name}`} className="hit" style={{ width: 40, borderLeft: '1px solid var(--color-border)' }}>
-            <Trash2 size={16} color="var(--color-danger)" />
+          <button
+            onClick={() => setPendingDelete(ex)}
+            aria-label={`Remove ${ex.name}`}
+            className="btn-icon"
+            style={{ borderLeft: '1px solid var(--line)' }}
+          >
+            <Trash2 size={16} color="var(--destructive)" />
           </button>
         </div>
       ))}

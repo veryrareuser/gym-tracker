@@ -24,24 +24,32 @@ export function useColorScheme() {
   return scheme
 }
 
-/** Chart palette per appearance. Grid and label values clear 4.5:1 on their surface. */
+/**
+ * Chart palette per appearance, drawn from the DESIGN.md token set.
+ *
+ * SVG presentation attributes cannot read CSS custom properties, so the values are
+ * duplicated here as literals. `muted` is the one deliberate choice: the previous
+ * near-surface greys were 1.71:1 in light and 1.50:1 in dark, which made the
+ * de-emphasised historical bars effectively invisible. De-emphasis is now carried
+ * by bar width and fill opacity over the series hue, so the bars stay legible.
+ */
 export const CHART_COLORS = {
   light: {
-    grid: 'rgba(60,60,67,0.15)',
-    axis: '#6b6b70',
+    grid: 'rgba(0, 0, 0, 0.08)',
+    axis: '#333333',
     series: '#0066cc',
     accent: '#0066cc',
-    muted: '#c6c6c8',
+    muted: '#0066cc',
     surface: '#ffffff',
-    text: '#000000',
+    text: '#1d1d1f',
   },
   dark: {
-    grid: 'rgba(84,84,88,0.5)',
-    axis: '#98989f',
-    series: '#0a84ff',
-    accent: '#0a84ff',
-    muted: '#3a3a3c',
-    surface: '#1c1c1e',
+    grid: 'rgba(255, 255, 255, 0.14)',
+    axis: '#cccccc',
+    series: '#2997ff',
+    accent: '#2997ff',
+    muted: '#2997ff',
+    surface: '#252527',
     text: '#ffffff',
   },
 }

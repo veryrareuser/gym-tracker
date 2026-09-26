@@ -63,7 +63,7 @@ export default function RestTimer() {
   const remaining = timerState?.remaining ?? 0
   const progress = timerState ? remaining / timerState.total : 0
   const isLow = finished || remaining <= 10
-  const tone = isLow ? 'var(--color-danger-fill)' : 'var(--color-accent)'
+  const tone = isLow ? 'var(--destructive)' : 'var(--primary)'
 
   return (
     <div
@@ -86,14 +86,13 @@ export default function RestTimer() {
         aria-label={finished ? 'Rest complete' : `Rest, ${formatTime(remaining)} remaining`}
         className="glass"
         style={{
-          borderRadius: 'var(--radius-md)',
+          borderRadius: 'var(--rounded-md)',
           overflow: 'hidden',
-          boxShadow: 'var(--shadow-float)',
           pointerEvents: 'auto',
         }}
       >
         {!finished && (
-          <div style={{ height: 3, background: 'var(--color-fill)' }}>
+          <div style={{ height: 3, background: 'var(--fill)' }}>
             <div
               style={{
                 height: '100%',
@@ -105,28 +104,25 @@ export default function RestTimer() {
           </div>
         )}
 
-        <div style={{ display: 'flex', alignItems: 'center', padding: '10px 8px 10px 14px', gap: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', padding: '8px 8px 8px 17px', gap: 8 }}>
           <Timer size={18} color={tone} style={{ flexShrink: 0 }} />
-          <span style={{ fontSize: 'var(--type-subhead)', color: 'var(--color-muted)', flex: 1 }}>
+          <span style={{ fontSize: 'var(--type-subhead)', color: 'var(--ink-muted)', flex: 1 }}>
             {finished ? 'Rest over — go!' : 'Resting'}
           </span>
           <span
             className="tnum"
             style={{
               fontSize: 'var(--type-title)',
-              fontWeight: 700,
-              color: isLow ? 'var(--color-danger)' : 'var(--color-text)',
+              // Numerals keep the body tracking; the +0.231px tagline tracking is a
+              // text treatment and makes a countdown read unevenly.
+              fontWeight: 600,
+              color: isLow ? 'var(--destructive)' : 'var(--ink)',
             }}
           >
             {finished ? '0:00' : formatTime(remaining)}
           </span>
-          <button
-            onClick={handleDismiss}
-            aria-label="Dismiss rest timer"
-            className="hit"
-            style={{ width: 40, minHeight: 40, flexShrink: 0 }}
-          >
-            <X size={18} color="var(--color-muted)" />
+          <button onClick={handleDismiss} aria-label="Dismiss rest timer" className="btn-icon" style={{ flexShrink: 0 }}>
+            <X size={18} color="var(--ink-muted)" />
           </button>
         </div>
       </div>

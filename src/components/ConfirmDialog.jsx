@@ -47,45 +47,41 @@ export default function ConfirmDialog({
         style={{
           width: '100%',
           maxWidth: 300,
-          borderRadius: 'var(--radius-md)',
+          borderRadius: 'var(--rounded-md)',
           overflow: 'hidden',
-          background: 'var(--color-surface)',
-          boxShadow: 'var(--shadow-float)',
+          background: 'var(--surface)',
+          border: '1px solid var(--line)',
           animation: 'rise 0.2s ease',
         }}
       >
-        <div style={{ padding: '20px 18px 16px', textAlign: 'center' }}>
-          <h2 style={{ fontSize: 'var(--type-headline)', fontWeight: 700, margin: '0 0 6px' }}>{title}</h2>
-          <p style={{ fontSize: 'var(--type-footnote)', color: 'var(--color-muted)', margin: 0, lineHeight: 1.4 }}>
+        <div style={{ padding: '24px 17px 17px', textAlign: 'center' }}>
+          <h2 style={{ fontSize: 'var(--type-headline)', fontWeight: 600, margin: '0 0 8px' }}>{title}</h2>
+          <p style={{ fontSize: 'var(--type-subhead)', color: 'var(--ink-muted)', margin: 0, lineHeight: 1.43 }}>
             {message}
           </p>
         </div>
         <div
           style={{
             display: 'flex',
-            borderTop: '1px solid var(--color-border)',
+            borderTop: '1px solid var(--line)',
           }}
         >
           <button
             onClick={onCancel}
-            style={{
-              flex: 1,
-              minHeight: 44,
-              color: 'var(--color-accent-text)',
-              fontSize: 'var(--type-headline)',
-              borderRight: '1px solid var(--color-border)',
-            }}
+            className="btn-quiet"
+            style={{ flex: 1, borderRight: '1px solid var(--line)', borderRadius: 0, padding: 0 }}
           >
             {cancelLabel}
           </button>
           <button
             onClick={onConfirm}
+            className="btn-quiet"
             style={{
               flex: 1,
-              minHeight: 44,
-              color: destructive ? 'var(--color-danger)' : 'var(--color-accent-text)',
+              color: destructive ? 'var(--destructive)' : 'var(--primary)',
               fontWeight: 600,
-              fontSize: 'var(--type-headline)',
+              borderRadius: 0,
+              padding: 0,
             }}
           >
             {confirmLabel}

@@ -18,16 +18,15 @@ function ChartTooltip({ active, payload, label, unit }) {
       style={{
         background: c.surface,
         border: `1px solid ${c.grid}`,
-        borderRadius: 12,
+        borderRadius: 11,
         padding: '8px 12px',
-        fontSize: 13,
+        fontSize: 14,
         color: c.text,
-        boxShadow: '0 8px 24px rgba(0,0,0,0.18)',
       }}
     >
       <div style={{ color: c.axis, marginBottom: 2 }}>{label}</div>
       {payload.map(p => (
-        <div key={p.name} className="tnum" style={{ color: c.series, fontWeight: 700 }}>
+        <div key={p.name} className="tnum" style={{ color: c.series, fontWeight: 600 }}>
           {p.value} {unit}
         </div>
       ))}
@@ -106,8 +105,8 @@ export default function Analytics() {
 
       {sessions.length === 0 && (
         <div className="card" style={{ padding: '48px 24px', textAlign: 'center' }}>
-          <TrendingUp size={36} color="var(--color-faint)" style={{ marginBottom: 10 }} />
-          <p style={{ margin: 0, color: 'var(--color-muted)', fontSize: 'var(--type-subhead)' }}>
+          <TrendingUp size={36} color="var(--ink-faint)" style={{ marginBottom: 10 }} />
+          <p style={{ margin: 0, color: 'var(--ink-muted)', fontSize: 'var(--type-subhead)' }}>
             Log some sessions to see your progress.
           </p>
         </div>
@@ -115,10 +114,10 @@ export default function Analytics() {
 
       {sessions.length > 0 && (
         <>
-          <section className="card" style={{ padding: 16, marginBottom: 12 }}>
+          <section className="card" style={{ padding: 17, marginBottom: 8 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
               <TrendingUp size={18} color={c.series} />
-              <h2 style={{ fontSize: 'var(--type-headline)', fontWeight: 700, margin: 0 }}>Weight Progression</h2>
+              <h2 style={{ fontSize: 'var(--type-headline)', fontWeight: 600, margin: 0 }}>Weight Progression</h2>
             </div>
 
             <div style={{ position: 'relative', marginBottom: 14 }}>
@@ -136,13 +135,13 @@ export default function Analytics() {
               </select>
               <ChevronDown
                 size={16}
-                color="var(--color-muted)"
+                color="var(--ink-muted)"
                 style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}
               />
             </div>
 
             {weightData.length < 2 ? (
-              <p style={{ textAlign: 'center', padding: '24px 0', color: 'var(--color-muted)', fontSize: 'var(--type-footnote)', margin: 0 }}>
+              <p style={{ textAlign: 'center', padding: '24px 0', color: 'var(--ink-muted)', fontSize: 'var(--type-subhead)', margin: 0 }}>
                 Log this exercise twice to see a trend.
               </p>
             ) : (
@@ -165,10 +164,10 @@ export default function Analytics() {
             )}
           </section>
 
-          <section className="card" style={{ padding: 16, marginBottom: 12 }}>
+          <section className="card" style={{ padding: 17, marginBottom: 8 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
-              <Zap size={18} color="var(--color-warning-fill)" />
-              <h2 style={{ fontSize: 'var(--type-headline)', fontWeight: 700, margin: 0 }}>Volume per Session</h2>
+              <Zap size={18} color="var(--primary)" />
+              <h2 style={{ fontSize: 'var(--type-headline)', fontWeight: 600, margin: 0 }}>Volume per Session</h2>
             </div>
             <ResponsiveContainer width="100%" height={160}>
               <BarChart data={volumeData} margin={{ top: 4, right: 8, left: -22, bottom: 0 }}>
@@ -176,7 +175,7 @@ export default function Analytics() {
                 <XAxis dataKey="date" {...axisProps} />
                 <YAxis {...axisProps} width={40} />
                 <Tooltip content={<ChartTooltip unit="kg vol" />} cursor={{ fill: c.grid, opacity: 0.4 }} />
-                <Bar dataKey="volume" radius={[6, 6, 0, 0]} maxBarSize={28}>
+                <Bar dataKey="volume" radius={[8, 8, 0, 0]} maxBarSize={28}>
                   {volumeData.map((_, i) => (
                     <Cell key={i} fill={i === volumeData.length - 1 ? c.series : c.muted} />
                   ))}
@@ -185,13 +184,13 @@ export default function Analytics() {
             </ResponsiveContainer>
           </section>
 
-          <section className="card" style={{ padding: 16 }}>
+          <section className="card" style={{ padding: 17 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-              <Award size={18} color="var(--color-warning-fill)" />
-              <h2 style={{ fontSize: 'var(--type-headline)', fontWeight: 700, margin: 0 }}>Personal Records</h2>
+              <Award size={18} color="var(--primary)" />
+              <h2 style={{ fontSize: 'var(--type-headline)', fontWeight: 600, margin: 0 }}>Personal Records</h2>
             </div>
             {prs.length === 0 ? (
-              <p style={{ color: 'var(--color-muted)', fontSize: 'var(--type-footnote)', margin: 0 }}>No records yet.</p>
+              <p style={{ color: 'var(--ink-muted)', fontSize: 'var(--type-subhead)', margin: 0 }}>No records yet.</p>
             ) : (
               prs.map((pr, i) => (
                 <div
@@ -201,18 +200,18 @@ export default function Analytics() {
                     alignItems: 'center',
                     justifyContent: 'space-between',
                     padding: '10px 0',
-                    borderTop: i === 0 ? 'none' : '1px solid var(--color-border)',
+                    borderTop: i === 0 ? 'none' : '1px solid var(--line)',
                   }}
                 >
                   <div style={{ minWidth: 0 }}>
-                    <div style={{ fontWeight: 500, fontSize: 'var(--type-subhead)' }}>{pr.name}</div>
-                    <div style={{ fontSize: 'var(--type-caption)', color: 'var(--color-muted)' }}>{pr.date}</div>
+                    <div style={{ fontWeight: 400, fontSize: 'var(--type-subhead)' }}>{pr.name}</div>
+                    <div style={{ fontSize: 'var(--type-fine)', color: 'var(--ink-muted)' }}>{pr.date}</div>
                   </div>
                   <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                    <div className="tnum" style={{ fontWeight: 700, fontSize: 'var(--type-headline)', color: 'var(--color-warning)' }}>
+                    <div className="tnum" style={{ fontWeight: 600, fontSize: 'var(--type-headline)', color: 'var(--ink)' }}>
                       {pr.weight} kg
                     </div>
-                    <div className="tnum" style={{ fontSize: 'var(--type-caption)', color: 'var(--color-muted)' }}>
+                    <div className="tnum" style={{ fontSize: 'var(--type-fine)', color: 'var(--ink-muted)' }}>
                       {pr.reps} reps
                     </div>
                   </div>

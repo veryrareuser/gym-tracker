@@ -1,111 +1,146 @@
 @import "tailwindcss";
 
 /*
- * Design tokens.
+ * Design tokens — source of truth: ../DESIGN.md (Apple web design language).
  *
- * Contrast ratios below are computed from these hex values, not estimated.
- * Text roles all clear WCAG AA 4.5:1 against every surface they are used on.
+ * ── Contrast ────────────────────────────────────────────────────────────────
+ * Every ratio below is computed from these hex values, not estimated. Text roles
+ * clear WCAG AA 4.5:1 on every surface they are used on:
  *
- * Two values deviate from Apple's system palette on purpose, because the stock
- * system colors do not pass AA on web surfaces:
- *   - Apple's secondaryLabel (60% black) composites to #8A8A8E on white = 3.44:1.
- *     --color-muted is darkened to #6B6B70 (5.30:1 on surface, 4.75:1 on bg).
- *   - systemBlue #007AFF is 4.02:1 on white, so in light mode it is a FILL color
- *     only. Small text uses --color-accent-text #0066CC (5.57:1).
+ *   light  ink #1d1d1f        16.8:1 on card · 15.5:1 on canvas
+ *          ink-muted #6e6e73   5.1:1 on card ·  4.7:1 on canvas
+ *          primary #0066cc      5.6:1 on card ·  5.1:1 on canvas
+ *          on-primary #ffffff  5.6:1 on primary
+ *          destructive #d70015 5.4:1 on card ·  4.9:1 on canvas
+ *   dark   ink #ffffff        21:1 on canvas · 15.3:1 on surface
+ *          ink-muted #cccccc  13.1:1 on canvas ·  9.5:1 on surface
+ *          primary #2997ff      7.0:1 on canvas ·  5.1:1 on surface
+ *          on-primary #000000  7.0:1 on primary
+ *          destructive #ff5f56  6.2:1 on canvas ·  5.1:1 on surface
+ *
+ * ── Documented deviations from DESIGN.md ────────────────────────────────────
+ * Each of these is a case where a literal reading of the spec fails WCAG AA or
+ * SC 1.4.11 in a dense data UI. DESIGN.md documents five marketing pages; it has
+ * no tab bar, no dialog, no form validation, and no charts.
+ *
+ * 1. ink-muted is #6e6e73, not ink-muted-48 #7a7a7a. The spec's only secondary
+ *    text token is 4.29:1 on white and 3.94:1 on parchment — both under 4.5:1.
+ *    #6e6e73 is the same hue family, darkened to 5.07:1 / 4.66:1.
+ * 2. line-control is #c7c7cc, not hairline #e0e0e0. The spec's hairline is
+ *    1.32:1 on white — decorative on a full-bleed tile where an 80px colour
+ *    change does the separating, but invisible on a control you must be able to
+ *    see. #c7c7cc is 1.68:1. `line` (#e0e0e0) is still used for decorative card
+ *    hairlines, where it is doing the right job.
+ * 3. A dark appearance exists at all. DESIGN.md's Known Gaps says dark-mode
+ *    counterparts "were not surfaced"; the documented system is light-only.
+ *    These values are assembled from the spec's own dark building blocks
+ *    (surface-black, surface-tile-1/-2/-3, body-muted, primary-on-dark) rather
+ *    than invented.
+ * 4. destructive is a semantic colour, exempt from the single-accent rule. The
+ *    spec has no error colour and no destructive component; a delete confirmation
+ *    with no danger signal is worse than a documented second hue. It is scoped to
+ *    confirm labels, destructive glyphs, and error banners — never a fill.
+ * 5. Charts de-emphasise by bar width and weight, not by dropping to a
+ *    near-surface grey. The previous near-surface greys were 1.71:1 and 1.50:1 —
+ *    the historical bars were effectively invisible.
+ *
+ * ── Rules taken straight from the spec ──────────────────────────────────────
+ * - "exactly one drop-shadow … never to cards, never to buttons, never to text."
+ *   There is no shadow token in this file. Depth comes from surface steps and
+ *   backdrop blur only.
+ * - "The full-pill radius IS the brand action signal." Primary and secondary
+ *   actions are pills; the other radii are for compact utility and cards.
+ * - "Weight 500 is deliberately absent." The ladder is 300 / 400 / 600.
+ * - "Use transform: scale(0.95) as the active/press state on every button."
+ * - "one Action Blue for every interactive element — and nothing else."
  */
 
 :root {
   color-scheme: light dark;
 
-  /* Surfaces — iOS grouped style */
-  --color-bg: #f2f2f7;
-  --color-surface: #ffffff;
-  --color-surface-raised: #ffffff;
-  --color-fill: rgba(120, 120, 128, 0.12);
-  --color-fill-strong: rgba(120, 120, 128, 0.2);
-  --color-border: rgba(60, 60, 67, 0.18);
+  /* ── Surfaces ── */
+  --canvas: #f5f5f7; /* canvas-parchment */
+  --surface: #ffffff; /* canvas */
+  --surface-raised: #fafafc; /* surface-pearl */
+  --fill: #f0f0f0; /* divider-soft */
+  --fill-strong: #e8e8ed;
+  --line: #e0e0e0; /* hairline — decorative only */
+  --line-control: #c7c7cc; /* deviation 2 */
 
-  /* Content */
-  --color-text: #000000;
-  --color-muted: #6b6b70;
-  --color-faint: #a1a1a6;
+  /* ── Content ── */
+  --ink: #1d1d1f; /* ink, not pure black */
+  --ink-muted: #6e6e73; /* deviation 1 */
+  --ink-faint: #aeaeb2; /* decorative glyphs and dividers only, never text */
+  --on-primary: #ffffff;
 
-  /* Accent — fill vs. text variants are separate because #007AFF fails AA as text */
-  --color-accent: #007aff;
-  --color-accent-text: #0066cc;
-  --color-accent-dim: rgba(0, 122, 255, 0.1);
-  --color-on-accent: #ffffff;
+  /* ── The single accent ── */
+  --primary: #0066cc; /* Action Blue */
+  --primary-focus: #0071e3; /* Focus Blue */
+  --primary-wash: rgba(0, 108, 204, 0.08);
 
-  /* Signals */
-  --color-danger: #d70015;
-  --color-danger-fill: #ff3b30;
-  --color-success: #1e7f35;
-  --color-success-fill: #34c759;
-  --color-warning: #8a5100;
-  --color-warning-fill: #ff9500;
+  /* ── Semantic, exempt from the single-accent rule (deviation 4) ── */
+  --destructive: #d70015;
 
-  /* Floating material — tab bar, sheets, rest timer. Never used on content. */
-  --glass-bg: rgba(249, 249, 249, 0.72);
-  --glass-border: rgba(0, 0, 0, 0.08);
-  --glass-blur: saturate(180%) blur(20px);
+  /* ── Floating material: floating-sticky-bar + sub-nav-frosted ── */
+  --glass-bg: rgba(245, 245, 247, 0.8);
+  --glass-line: rgba(0, 0, 0, 0.08);
+  --blur: saturate(180%) blur(20px);
 
-  /* Elevation */
-  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.04), 0 6px 20px rgba(0, 0, 0, 0.05);
-  --shadow-float: 0 2px 8px rgba(0, 0, 0, 0.08), 0 12px 32px rgba(0, 0, 0, 0.1);
+  /* ── Type ── */
+  --type-display: 34px; /* display-md */
+  --type-title: 21px; /* tagline */
+  --type-headline: 17px; /* body-strong */
+  --type-body: 17px; /* body */
+  --type-subhead: 14px; /* caption */
+  --type-fine: 12px; /* fine-print and nav-link */
+  --type-nav: 12px; /* nav-link */
 
-  /* Continuous corners */
-  --radius-sm: 10px;
-  --radius-md: 14px;
-  --radius-lg: 20px;
-  --radius-pill: 999px;
+  --tracking-display: -0.374px;
+  --tracking-title: 0.231px;
+  --tracking-headline: -0.374px;
+  --tracking-body: -0.374px;
+  --tracking-subhead: -0.224px;
+  --tracking-fine: -0.12px;
+  --leading-body: 1.47;
 
-  /* Type — 17px body, 11px floor (HIG mobile minimum) */
-  --type-large-title: 34px;
-  --type-title: 22px;
-  --type-headline: 17px;
-  --type-body: 17px;
-  --type-callout: 16px;
-  --type-subhead: 15px;
-  --type-footnote: 13px;
-  --type-caption: 12px;
-  --type-min: 11px;
+  --weight-regular: 400;
+  --weight-semibold: 600;
 
-  /* Controls */
+  /* ── Radii ── */
+  --rounded-sm: 8px;
+  --rounded-md: 11px;
+  --rounded-lg: 18px;
+  --rounded-pill: 9999px;
+
+  /* ── Controls ── */
   --hit-min: 44px;
-  --tab-bar-height: 49px;
-  --gutter: 16px;
+  --tab-bar-height: 52px; /* sub-nav-frosted */
+  --gutter: 17px; /* spacing.md */
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --color-bg: #000000;
-    --color-surface: #1c1c1e;
-    --color-surface-raised: #2c2c2e;
-    --color-fill: rgba(118, 118, 128, 0.24);
-    --color-fill-strong: rgba(118, 118, 128, 0.36);
-    --color-border: rgba(84, 84, 88, 0.6);
+    --canvas: #000000; /* surface-black */
+    --surface: #252527; /* surface-tile-3 */
+    --surface-raised: #2a2a2c; /* surface-tile-2 */
+    --fill: rgba(255, 255, 255, 0.1);
+    --fill-strong: rgba(255, 255, 255, 0.16);
+    --line: rgba(255, 255, 255, 0.14);
+    --line-control: rgba(255, 255, 255, 0.28);
 
-    --color-text: #ffffff;
-    --color-muted: #98989f;
-    --color-faint: #6c6c70;
+    --ink: #ffffff; /* body-on-dark */
+    --ink-muted: #cccccc; /* body-muted */
+    --ink-faint: #8e8e93;
+    --on-primary: #000000;
 
-    --color-accent: #0a84ff;
-    --color-accent-text: #0a84ff;
-    --color-accent-dim: rgba(10, 132, 255, 0.16);
-    --color-on-accent: #000000;
+    --primary: #2997ff; /* primary-on-dark */
+    --primary-focus: #2997ff;
+    --primary-wash: rgba(41, 151, 255, 0.14);
 
-    --color-danger: #ff453a;
-    --color-danger-fill: #ff453a;
-    --color-success: #30d158;
-    --color-success-fill: #30d158;
-    --color-warning: #ff9f0a;
-    --color-warning-fill: #ff9f0a;
+    --destructive: #ff5f56;
 
-    --glass-bg: rgba(28, 28, 30, 0.72);
-    --glass-border: rgba(255, 255, 255, 0.1);
-
-    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4);
-    --shadow-float: 0 2px 10px rgba(0, 0, 0, 0.6), 0 16px 40px rgba(0, 0, 0, 0.5);
+    --glass-bg: rgba(37, 37, 39, 0.8);
+    --glass-line: rgba(255, 255, 255, 0.1);
   }
 }
 
@@ -115,173 +150,267 @@
 }
 
 html {
-  background-color: var(--color-bg);
+  background-color: var(--canvas);
 }
 
 body {
   margin: 0;
-  background-color: var(--color-bg);
-  color: var(--color-text);
-  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+  background-color: var(--canvas);
+  color: var(--ink);
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
   font-size: var(--type-body);
-  line-height: 1.45;
-  letter-spacing: -0.01em;
+  line-height: var(--leading-body);
+  letter-spacing: var(--tracking-body);
+  font-weight: var(--weight-regular);
   overscroll-behavior: none;
   -webkit-font-smoothing: antialiased;
 }
 
+h1,
+h2,
+h3 {
+  letter-spacing: var(--tracking-display);
+  font-weight: var(--weight-semibold);
+  margin: 0;
+}
+
+/* ─── Inputs ──────────────────────────────────────────────────────────────── */
+
 input,
 textarea,
 select {
-  background: var(--color-fill);
-  color: var(--color-text);
-  border: 1px solid transparent;
-  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--ink);
+  border: 1px solid var(--line-control);
+  border-radius: var(--rounded-sm);
   padding: 11px 12px;
-  font-size: var(--type-body);
+  /* 11px vertical + 1px border x2 = 44px minimum, per the spec's touch target */
+  min-height: var(--hit-min);
   font-family: inherit;
+  font-size: var(--type-body);
+  letter-spacing: var(--tracking-body);
   outline: none;
   width: 100%;
   transition: border-color 0.15s;
 }
 
+textarea {
+  min-height: calc(var(--hit-min) * 2);
+  resize: none;
+}
+
 input::placeholder,
 textarea::placeholder {
-  color: var(--color-faint);
+  color: var(--ink-muted);
+  opacity: 1;
 }
 
 input:focus,
 textarea:focus,
 select:focus {
-  border-color: var(--color-accent);
-  background: var(--color-surface);
+  border-color: var(--primary);
 }
 
 input[type="date"] {
   min-height: var(--hit-min);
 }
 
+select {
+  appearance: none;
+  padding-right: 36px;
+}
+
+@media (prefers-color-scheme: dark) {
+  input,
+  textarea,
+  select {
+    background: var(--fill);
+  }
+}
+
+/* ─── Button primitive ────────────────────────────────────────────────────────
+ * One contract for every button in the app, so no button can end up with its
+ * content jammed into a corner. The previous reset declared no display,
+ * align-items, justify-content, or gap, which is why full-width buttons rendered
+ * their icon at the top-left. */
+
 button {
-  cursor: pointer;
-  font-size: var(--type-body);
-  font-family: inherit;
-  color: inherit;
-  background: none;
-  border: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: var(--hit-min);
   padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font-family: inherit;
+  font-size: var(--type-body);
+  font-weight: var(--weight-regular);
+  letter-spacing: var(--tracking-body);
+  cursor: pointer;
+  -webkit-user-select: none;
+  user-select: none;
+  transition: transform 0.12s ease, background-color 0.12s ease, border-color 0.12s ease;
+}
+
+/* "Use transform: scale(0.95) as the active/press state on every button." */
+button:active:not(:disabled) {
+  transform: scale(0.95);
 }
 
 button:disabled {
   cursor: default;
-  opacity: 0.5;
+  opacity: 0.4;
 }
 
-/* Visible focus for keyboard and switch-control users. */
+/* Visible focus for keyboard and Switch Control users. Deliberately does not set
+   border-radius — doing so permanently reshaped whatever was focused. */
 :focus-visible {
-  outline: 2px solid var(--color-accent);
+  outline: 2px solid var(--primary-focus);
   outline-offset: 2px;
-  border-radius: 6px;
 }
 
-/* ─── Shared components ─── */
+/* ─── Button variants ─────────────────────────────────────────────────────── */
 
-/* Floating material. Glass on the functional layer, solid where unsupported. */
-.glass {
-  background: var(--glass-bg);
-  -webkit-backdrop-filter: var(--glass-blur);
-  backdrop-filter: var(--glass-blur);
-  border: 1px solid var(--glass-border);
+.btn-primary {
+  background: var(--primary);
+  color: var(--on-primary);
+  border-radius: var(--rounded-pill);
+  padding: 11px 22px;
 }
-@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  .glass {
-    background: var(--color-surface);
-  }
+
+.btn-secondary {
+  /* button-secondary-pill — the "ghost pill" */
+  background: transparent;
+  color: var(--primary);
+  border: 1px solid var(--primary);
+  border-radius: var(--rounded-pill);
+  padding: 11px 22px;
 }
+
+.btn-quiet {
+  /* text-link promoted to a 44px target */
+  color: var(--primary);
+  border-radius: var(--rounded-pill);
+  padding: 0 12px;
+}
+
+.btn-block {
+  width: 100%;
+}
+
+.btn-icon {
+  width: var(--hit-min);
+  min-width: var(--hit-min);
+  padding: 0;
+  border-radius: var(--rounded-pill);
+}
+
+/* ─── Surfaces ────────────────────────────────────────────────────────────── */
 
 .card {
-  background: var(--color-surface);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-card);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--rounded-lg);
+}
+
+.glass {
+  /* Floating material. Functional, not decorative: tab bar, sheet headers,
+     the rest timer. Never applied to content. */
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: var(--blur);
+  backdrop-filter: var(--blur);
+  border: 1px solid var(--glass-line);
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .glass {
+    background: var(--surface);
+  }
 }
 
 .chip {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 4px;
   min-height: 32px;
   padding: 0 12px;
-  border-radius: var(--radius-pill);
-  font-size: var(--type-caption);
-  font-weight: 600;
+  border-radius: var(--rounded-pill);
+  background: var(--fill);
+  color: var(--ink-muted);
+  font-size: var(--type-subhead);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-subhead);
   white-space: nowrap;
-  color: var(--color-muted);
-  background: var(--color-fill);
 }
+
 .chip[data-selected="true"] {
-  background: var(--color-accent);
-  color: var(--color-on-accent);
+  background: var(--primary);
+  color: var(--on-primary);
 }
+
+/* ─── Layout ──────────────────────────────────────────────────────────────── */
 
 .screen {
   padding: 0 var(--gutter) calc(var(--tab-bar-height) + 40px + env(safe-area-inset-bottom));
 }
 
 .screen-title {
-  font-size: var(--type-large-title);
-  font-weight: 800;
-  letter-spacing: -0.02em;
+  font-size: var(--type-display);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-display);
+  line-height: 1.2;
   margin: 0;
 }
 
 .section-label {
-  font-size: var(--type-footnote);
-  font-weight: 600;
+  font-size: var(--type-fine);
+  font-weight: var(--weight-semibold);
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: var(--color-muted);
+  color: var(--ink-muted);
   margin: 0 0 8px;
 }
 
-/* Every tappable row meets the 44pt minimum target. */
+/* Every tappable row meets the 44pt minimum. */
 .hit {
   min-width: var(--hit-min);
   min-height: var(--hit-min);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
 }
 
-/* Tabular figures for weights, reps, and countdowns. */
+/* Tab bar items are nav, not buttons: they must not squash on press. */
+.nav-item {
+  transform: none !important;
+}
+
+.nav-item:active:not(:disabled) {
+  opacity: 0.55;
+}
+
 .tnum {
   font-variant-numeric: tabular-nums;
   font-feature-settings: "tnum";
 }
 
 .thumb {
-  background: var(--color-fill);
-  border-radius: var(--radius-sm);
+  background: var(--fill);
+  border-radius: var(--rounded-sm);
   overflow: hidden;
   flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
 }
+
 .thumb img {
   width: 100%;
   height: 100%;
   object-fit: cover;
 }
 
-::-webkit-scrollbar {
-  width: 6px;
-}
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-::-webkit-scrollbar-thumb {
-  background: var(--color-border);
-  border-radius: 3px;
-}
+/* ─── Motion ──────────────────────────────────────────────────────────────── */
 
 @keyframes shake {
   0%, 100% { transform: translateX(0); }
@@ -294,7 +423,6 @@ button:disabled {
   to { opacity: 1; transform: translateY(0); }
 }
 
-/* Motion is decorative here, so it is always safe to drop. */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -307,7 +435,7 @@ button:disabled {
 
 @media (prefers-reduced-transparency: reduce) {
   .glass {
-    background: var(--color-surface);
+    background: var(--surface);
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
   }
@@ -315,16 +443,26 @@ button:disabled {
 
 @media (prefers-contrast: more) {
   :root {
-    --color-muted: #545458;
-    --color-border: rgba(60, 60, 67, 0.4);
+    --ink-muted: #4a4a4f;
+    --line: #a1a1a6;
+    --line-control: #6e6e73;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ink-muted: #ffffff;
+      --line: rgba(255, 255, 255, 0.4);
+      --line-control: rgba(255, 255, 255, 0.6);
+    }
   }
 }
 
-@media (prefers-contrast: more) {
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --color-muted: #c7c7cc;
-      --color-border: rgba(255, 255, 255, 0.4);
-    }
-  }
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--line-control);
+  border-radius: 3px;
 }

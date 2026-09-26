@@ -34,7 +34,7 @@ export default function SessionDetail() {
 
   if (!loaded) {
     return (
-      <div className="screen" style={{ paddingTop: 80, textAlign: 'center', color: 'var(--color-muted)' }}>
+      <div className="screen" style={{ paddingTop: 80, textAlign: 'center', color: 'var(--ink-muted)' }}>
         Loading…
       </div>
     )
@@ -43,8 +43,8 @@ export default function SessionDetail() {
   if (!session) {
     return (
       <div className="screen" style={{ paddingTop: 80, textAlign: 'center' }}>
-        <p style={{ color: 'var(--color-muted)', marginBottom: 16 }}>This session no longer exists.</p>
-        <button onClick={() => navigate('/history')} style={{ color: 'var(--color-accent-text)', fontSize: 'var(--type-headline)' }}>
+        <p style={{ color: 'var(--ink-muted)', marginBottom: 16 }}>This session no longer exists.</p>
+        <button onClick={() => navigate('/history')} className="btn-quiet">
           Back to History
         </button>
       </div>
@@ -63,39 +63,28 @@ export default function SessionDetail() {
         }}
       >
         <button onClick={() => navigate(-1)} aria-label="Back" className="hit" style={{ marginLeft: -10 }}>
-          <ArrowLeft size={24} color="var(--color-accent-text)" />
+          <ArrowLeft size={24} color="var(--primary)" />
         </button>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <h1 className="screen-title" style={{ fontSize: 'var(--type-title)' }}>
+          <h1 className="screen-title" style={{ fontSize: 'var(--type-title)', letterSpacing: 'var(--tracking-title)' }}>
             {formatDate(session.date)}
           </h1>
-          <div style={{ fontSize: 'var(--type-footnote)', color: 'var(--color-muted)' }}>
+          <div style={{ fontSize: 'var(--type-subhead)', color: 'var(--ink-muted)' }}>
             {session.exercise_logs?.length || 0} exercises · {Math.round(calcVolume(session))} kg volume
           </div>
         </div>
         <button
           onClick={() => setConfirming(true)}
           aria-label="Delete session"
-          className="hit"
-          style={{ width: 40, flexShrink: 0 }}
+          className="btn-icon"
+          style={{ flexShrink: 0 }}
         >
-          <Trash2 size={18} color="var(--color-danger)" />
+          <Trash2 size={18} color="var(--destructive)" />
         </button>
         <button
           onClick={() => navigate(`/log/${session.id}`)}
-          style={{
-            minHeight: 36,
-            padding: '0 14px',
-            borderRadius: 'var(--radius-pill)',
-            background: 'var(--color-fill)',
-            color: 'var(--color-accent-text)',
-            fontSize: 'var(--type-subhead)',
-            fontWeight: 500,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-            flexShrink: 0,
-          }}
+          className="btn-secondary"
+          style={{ fontSize: 'var(--type-subhead)', padding: '8px 16px', flexShrink: 0 }}
         >
           <Pencil size={14} /> Edit
         </button>
@@ -109,28 +98,28 @@ export default function SessionDetail() {
         const notes = [...new Set(sets.map(s => s.note).filter(Boolean))]
 
         return (
-          <section key={log.id} className="card" style={{ padding: 14, marginBottom: 12 }}>
+          <section key={log.id} className="card" style={{ padding: 17, marginBottom: 8 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
                 <span className="thumb" style={{ width: 44, height: 44 }}>
                   {ex?.image_url ? (
                     <img src={ex.image_url} alt="" loading="lazy" decoding="async" />
                   ) : (
-                    <Dumbbell size={18} color="var(--color-faint)" />
+                    <Dumbbell size={18} color="var(--ink-faint)" />
                   )}
                 </span>
                 <div style={{ minWidth: 0 }}>
-                  <div style={{ fontWeight: 600, fontSize: 'var(--type-headline)' }}>{ex?.name || 'Unknown'}</div>
+                  <div style={{ fontWeight: 600, fontSize: 'var(--type-headline)', letterSpacing: 'var(--tracking-headline)' }}>{ex?.name || 'Unknown'}</div>
                   {ex?.muscle_group && (
-                    <div style={{ fontSize: 'var(--type-footnote)', color: 'var(--color-muted)' }}>{ex.muscle_group}</div>
+                    <div style={{ fontSize: 'var(--type-subhead)', color: 'var(--ink-muted)' }}>{ex.muscle_group}</div>
                   )}
                 </div>
               </div>
               <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                <div className="tnum" style={{ fontWeight: 700, fontSize: 'var(--type-headline)', color: 'var(--color-accent-text)' }}>
+                <div className="tnum" style={{ fontWeight: 600, fontSize: 'var(--type-headline)', color: 'var(--primary)' }}>
                   {topWeight} kg
                 </div>
-                <div style={{ fontSize: 'var(--type-caption)', color: 'var(--color-muted)' }}>top set</div>
+                <div style={{ fontSize: 'var(--type-fine)', color: 'var(--ink-muted)' }}>top set</div>
               </div>
             </div>
 
@@ -139,12 +128,12 @@ export default function SessionDetail() {
                 <div
                   key={label}
                   style={{
-                    fontSize: 'var(--type-min)',
-                    color: 'var(--color-muted)',
+                    fontSize: 'var(--type-fine)',
+                    color: 'var(--ink-muted)',
                     textAlign: 'center',
                     fontWeight: 600,
                     textTransform: 'uppercase',
-                    letterSpacing: 0.03,
+                    letterSpacing: '0.04em',
                     paddingBottom: 4,
                   }}
                 >
@@ -153,11 +142,11 @@ export default function SessionDetail() {
               ))}
               {sets.map(set => (
                 <div key={set.id} style={{ display: 'contents' }}>
-                  <div className="tnum" style={{ textAlign: 'center', fontSize: 'var(--type-subhead)', color: 'var(--color-muted)' }}>
+                  <div className="tnum" style={{ textAlign: 'center', fontSize: 'var(--type-subhead)', color: 'var(--ink-muted)' }}>
                     {set.set_number}
                   </div>
                   <div className="tnum" style={{ textAlign: 'center', fontSize: 'var(--type-subhead)', fontWeight: 600 }}>
-                    {set.weight} <span style={{ fontSize: 'var(--type-caption)', color: 'var(--color-muted)' }}>kg</span>
+                    {set.weight} <span style={{ fontSize: 'var(--type-fine)', color: 'var(--ink-muted)' }}>kg</span>
                   </div>
                   <div className="tnum" style={{ textAlign: 'center', fontSize: 'var(--type-subhead)', fontWeight: 600 }}>
                     {set.reps}
@@ -167,7 +156,7 @@ export default function SessionDetail() {
             </div>
 
             {notes.length > 0 && (
-              <p style={{ margin: '10px 0 0', fontSize: 'var(--type-footnote)', color: 'var(--color-muted)', fontStyle: 'italic' }}>
+              <p style={{ margin: '10px 0 0', fontSize: 'var(--type-subhead)', color: 'var(--ink-muted)', fontStyle: 'italic' }}>
                 {notes.join(' · ')}
               </p>
             )}
@@ -176,7 +165,7 @@ export default function SessionDetail() {
       })}
 
       {session.notes && (
-        <section className="card" style={{ padding: 14, marginTop: 4 }}>
+        <section className="card" style={{ padding: 17, marginTop: 4 }}>
           <div className="section-label" style={{ marginBottom: 4 }}>
             Notes
           </div>

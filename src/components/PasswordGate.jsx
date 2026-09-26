@@ -29,7 +29,7 @@ export default function PasswordGate({ onLogin }) {
         alignItems: 'center',
         justifyContent: 'center',
         padding: '24px',
-        background: 'var(--color-bg)',
+        background: 'var(--canvas)',
       }}
     >
       <div style={{ width: '100%', maxWidth: 360, textAlign: 'center' }}>
@@ -37,26 +37,29 @@ export default function PasswordGate({ onLogin }) {
           style={{
             width: 72,
             height: 72,
-            borderRadius: '50%',
-            background: 'var(--color-accent-dim)',
+            borderRadius: 'var(--rounded-pill)',
+            background: 'var(--primary-wash)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            margin: '0 auto 20px',
+            margin: '0 auto 24px',
           }}
         >
-          <Lock size={30} color="var(--color-accent)" />
+          <Lock size={30} color="var(--primary)" />
         </div>
 
-        <h1 className="screen-title" style={{ fontSize: 'var(--type-title)', marginBottom: 6 }}>
+        <h1 className="screen-title" style={{ fontSize: 'var(--type-title)', letterSpacing: 'var(--tracking-title)', marginBottom: 8 }}>
           Gym Tracker
         </h1>
-        <p style={{ color: 'var(--color-muted)', margin: '0 0 28px', fontSize: 'var(--type-subhead)' }}>
+        <p style={{ color: 'var(--ink-muted)', margin: '0 0 32px', fontSize: 'var(--type-subhead)' }}>
           Enter your password to continue
         </p>
 
         <form onSubmit={handleSubmit} style={{ animation: shake ? 'shake 0.4s ease' : 'none' }}>
-          <label htmlFor="gate-password" style={{ display: 'block', textAlign: 'left', fontSize: 'var(--type-footnote)', fontWeight: 600, color: 'var(--color-muted)', marginBottom: 6 }}>
+          <label
+            htmlFor="gate-password"
+            style={{ display: 'block', textAlign: 'left', fontSize: 'var(--type-subhead)', fontWeight: 600, color: 'var(--ink-muted)', marginBottom: 8 }}
+          >
             Password
           </label>
           <input
@@ -73,30 +76,21 @@ export default function PasswordGate({ onLogin }) {
             aria-describedby={error ? 'gate-error' : undefined}
             style={{
               marginBottom: 12,
-              borderColor: error ? 'var(--color-danger)' : 'transparent',
+              borderColor: error ? 'var(--destructive)' : 'var(--line-control)',
+              borderWidth: error ? 2 : 1,
               textAlign: 'center',
               fontSize: 'var(--type-title)',
-              letterSpacing: 6,
-              fontVariantNumeric: 'tabular-nums',
+              // Wide tracking spaces the characters of a masked password apart.
+              // This is a functional override, not the tagline tracking.
+              letterSpacing: '6px',
             }}
           />
           {error && (
-            <p id="gate-error" role="alert" style={{ color: 'var(--color-danger)', fontSize: 'var(--type-subhead)', margin: '0 0 12px' }}>
+            <p id="gate-error" role="alert" style={{ color: 'var(--destructive)', fontSize: 'var(--type-subhead)', margin: '0 0 12px' }}>
               Incorrect password
             </p>
           )}
-          <button
-            type="submit"
-            style={{
-              width: '100%',
-              minHeight: 'var(--hit-min)',
-              background: 'var(--color-accent)',
-              color: 'var(--color-on-accent)',
-              fontWeight: 600,
-              fontSize: 'var(--type-headline)',
-              borderRadius: 'var(--radius-md)',
-            }}
-          >
+          <button type="submit" className="btn-primary btn-block" style={{ minHeight: 50 }}>
             Unlock
           </button>
         </form>

@@ -20,7 +20,7 @@ export default function Layout() {
         minHeight: '100dvh',
         display: 'flex',
         flexDirection: 'column',
-        background: 'var(--color-bg)',
+        background: 'var(--canvas)',
       }}
     >
       {/* Page content. This is the scroll container, so the body never scrolls and
@@ -31,7 +31,8 @@ export default function Layout() {
 
       <RestTimer />
 
-      {/* Tab bar. Frozen material, lightly tinted, sits over content. */}
+      {/* Tab bar. The spec has no bottom tab bar; this stretches
+          floating-sticky-bar, which is its only bottom-anchored blurred chrome. */}
       <nav
         className="glass"
         style={{
@@ -43,7 +44,7 @@ export default function Layout() {
           maxWidth: 520,
           zIndex: 100,
           display: 'flex',
-          borderTop: '1px solid var(--color-border)',
+          borderTop: '1px solid var(--line)',
           borderRadius: 0,
           paddingBottom: 'env(safe-area-inset-bottom)',
         }}
@@ -53,6 +54,7 @@ export default function Layout() {
             key={to}
             to={to}
             end={to === '/'}
+            className="nav-item"
             style={({ isActive }) => ({
               flex: 1,
               display: 'flex',
@@ -60,17 +62,16 @@ export default function Layout() {
               alignItems: 'center',
               justifyContent: 'center',
               gap: 2,
-              // 49pt of content plus safe area matches the iOS tab bar height.
               minHeight: 'var(--tab-bar-height)',
-              paddingTop: 6,
-              color: isActive ? 'var(--color-accent)' : 'var(--color-muted)',
+              color: isActive ? 'var(--primary)' : 'var(--ink-muted)',
               textDecoration: 'none',
-              fontSize: 'var(--type-min)',
-              fontWeight: isActive ? 600 : 500,
+              fontSize: 'var(--type-nav)',
+              letterSpacing: 'var(--tracking-fine)',
+              fontWeight: isActive ? 600 : 400,
               transition: 'color 0.15s',
             })}
           >
-            <Icon size={24} strokeWidth={2} aria-hidden="true" />
+            <Icon size={22} strokeWidth={2} aria-hidden="true" />
             <span>{label}</span>
           </NavLink>
         ))}

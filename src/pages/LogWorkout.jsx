@@ -222,9 +222,9 @@ export default function LogWorkout() {
         }}
       >
         <button onClick={() => navigate(-1)} aria-label="Back" className="hit" style={{ marginLeft: -10 }}>
-          <ArrowLeft size={24} color="var(--color-accent-text)" />
+          <ArrowLeft size={24} color="var(--primary)" />
         </button>
-        <h1 className="screen-title" style={{ fontSize: 'var(--type-title)', flex: 1 }}>
+        <h1 className="screen-title" style={{ fontSize: 'var(--type-title)', letterSpacing: 'var(--tracking-title)', flex: 1 }}>
           {isEditMode ? 'Edit Session' : 'Log Workout'}
         </h1>
         {hasDraft && !isEditMode && (
@@ -237,14 +237,14 @@ export default function LogWorkout() {
           value={date}
           aria-label="Session date"
           onChange={e => setDate(e.target.value)}
-          style={{ width: 'auto', flexShrink: 0, fontSize: 'var(--type-footnote)' }}
+          style={{ width: 'auto', flexShrink: 0, fontSize: 'var(--type-subhead)', padding: '0 10px' }}
         />
       </div>
 
       {/* Rest duration */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
-        <Timer size={15} color="var(--color-muted)" />
-        <span style={{ fontSize: 'var(--type-footnote)', color: 'var(--color-muted)' }}>Rest</span>
+        <Timer size={15} color="var(--ink-muted)" />
+        <span style={{ fontSize: 'var(--type-subhead)', color: 'var(--ink-muted)' }}>Rest</span>
         {REST_OPTIONS.map(s => (
           <button
             key={s}
@@ -291,31 +291,31 @@ export default function LogWorkout() {
                   {log._image_url ? (
                     <img src={log._image_url} alt="" loading="lazy" decoding="async" />
                   ) : (
-                    <Dumbbell size={18} color="var(--color-faint)" />
+                    <Dumbbell size={18} color="var(--ink-faint)" />
                   )}
                 </span>
                 <span style={{ flex: 1, minWidth: 0 }}>
                   <span style={{ display: 'block', fontWeight: 600, fontSize: 'var(--type-headline)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {log._name}
                   </span>
-                  <span style={{ display: 'block', color: 'var(--color-muted)', fontSize: 'var(--type-footnote)' }}>
+                  <span style={{ display: 'block', color: 'var(--ink-muted)', fontSize: 'var(--type-subhead)' }}>
                     {log.set_entries.length} set{log.set_entries.length !== 1 ? 's' : ''}
                     {topWeight > 0 && ` · ${topWeight} kg top`}
                   </span>
                 </span>
                 {isCollapsed ? (
-                  <ChevronDown size={18} color="var(--color-muted)" style={{ flexShrink: 0 }} />
+                  <ChevronDown size={18} color="var(--ink-muted)" style={{ flexShrink: 0 }} />
                 ) : (
-                  <ChevronUp size={18} color="var(--color-muted)" style={{ flexShrink: 0 }} />
+                  <ChevronUp size={18} color="var(--ink-muted)" style={{ flexShrink: 0 }} />
                 )}
               </button>
               <button
                 onClick={() => removeLog(log.id)}
                 aria-label={`Remove ${log._name}`}
-                className="hit"
-                style={{ width: 40, minHeight: 40, flexShrink: 0 }}
+                className="btn-icon"
+                style={{ flexShrink: 0 }}
               >
-                <Trash2 size={17} color="var(--color-muted)" />
+                <Trash2 size={17} color="var(--ink-muted)" />
               </button>
             </div>
 
@@ -324,8 +324,8 @@ export default function LogWorkout() {
                 <div
                   style={{
                     display: 'grid',
-                    gridTemplateColumns: '32px 1fr 1fr 40px 40px',
-                    gap: 6,
+                    gridTemplateColumns: '32px 1fr 1fr 44px 44px',
+                    gap: 4,
                     marginBottom: 6,
                   }}
                 >
@@ -333,12 +333,12 @@ export default function LogWorkout() {
                     <div
                       key={i}
                       style={{
-                        fontSize: 'var(--type-min)',
-                        color: 'var(--color-muted)',
+                        fontSize: 'var(--type-fine)',
+                        color: 'var(--ink-muted)',
                         textAlign: 'center',
                         fontWeight: 600,
                         textTransform: 'uppercase',
-                        letterSpacing: 0.03,
+                        letterSpacing: '0.04em',
                       }}
                     >
                       {label}
@@ -353,9 +353,9 @@ export default function LogWorkout() {
                       key={set.id}
                       style={{
                         display: 'grid',
-                        gridTemplateColumns: '32px 1fr 1fr 40px 40px',
-                        gap: 6,
-                        marginBottom: 6,
+                        gridTemplateColumns: '32px 1fr 1fr 44px 44px',
+                        gap: 4,
+                        marginBottom: 4,
                         alignItems: 'center',
                       }}
                     >
@@ -364,14 +364,14 @@ export default function LogWorkout() {
                         style={{
                           width: 32,
                           height: 32,
-                          borderRadius: '50%',
-                          background: complete ? 'var(--color-accent)' : 'var(--color-fill)',
-                          color: complete ? 'var(--color-on-accent)' : 'var(--color-muted)',
+                          borderRadius: 'var(--rounded-pill)',
+                          background: complete ? 'var(--primary)' : 'var(--fill)',
+                          color: complete ? 'var(--on-primary)' : 'var(--ink-muted)',
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'center',
-                          fontSize: 'var(--type-footnote)',
-                          fontWeight: 700,
+                          fontSize: 'var(--type-subhead)',
+                          fontWeight: 600,
                         }}
                       >
                         {set.set_number}
@@ -384,7 +384,7 @@ export default function LogWorkout() {
                         value={set.weight}
                         onChange={e => updateSet(log.id, set.id, 'weight', e.target.value)}
                         className="tnum"
-                        style={{ textAlign: 'center', padding: '9px 6px', fontSize: 'var(--type-body)' }}
+                        style={{ textAlign: 'center', padding: '11px 6px' }}
                       />
                       <input
                         type="number"
@@ -394,40 +394,35 @@ export default function LogWorkout() {
                         value={set.reps}
                         onChange={e => updateSet(log.id, set.id, 'reps', e.target.value)}
                         className="tnum"
-                        style={{ textAlign: 'center', padding: '9px 6px', fontSize: 'var(--type-body)' }}
+                        style={{ textAlign: 'center', padding: '11px 6px' }}
                       />
                       <button
                         onClick={() => startTimer(restDuration)}
                         aria-label={`Start ${restDuration} second rest`}
-                        className="hit"
-                        style={{ width: 40, minHeight: 40 }}
+                        className="btn-icon"
                       >
-                        <Timer size={17} color="var(--color-muted)" />
+                        <Timer size={17} color="var(--ink-muted)" />
                       </button>
                       <button
                         onClick={() => removeSet(log.id, set.id)}
                         aria-label={`Remove set ${set.set_number}`}
-                        className="hit"
-                        style={{ width: 40, minHeight: 40 }}
+                        className="btn-icon"
                       >
-                        <Trash2 size={15} color="var(--color-muted)" />
+                        <Trash2 size={15} color="var(--ink-muted)" />
                       </button>
                     </div>
                   )
                 })}
 
+                {/* button-secondary-pill: a real box with a visible 1px Action Blue
+                    edge. The previous version had no fill, no border, and relied on
+                    a baseline hack for the icon, so it read as loose text. */}
                 <button
                   onClick={() => addSet(log.id)}
-                  style={{
-                    width: '100%',
-                    minHeight: 40,
-                    marginTop: 4,
-                    color: 'var(--color-accent-text)',
-                    fontSize: 'var(--type-subhead)',
-                    fontWeight: 500,
-                  }}
+                  className="btn-secondary"
+                  style={{ width: '100%', marginTop: 8, fontSize: 'var(--type-subhead)' }}
                 >
-                  <Plus size={15} style={{ verticalAlign: -2, marginRight: 4 }} />
+                  <Plus size={15} />
                   Add Set
                 </button>
               </div>
@@ -436,21 +431,10 @@ export default function LogWorkout() {
         )
       })}
 
-      {/* Add exercise */}
-      <button
-        onClick={() => setShowPicker(true)}
-        style={{
-          width: '100%',
-          minHeight: 'var(--hit-min)',
-          borderRadius: 'var(--radius-md)',
-          border: '1px dashed var(--color-border)',
-          color: 'var(--color-accent-text)',
-          fontSize: 'var(--type-headline)',
-          fontWeight: 500,
-          marginBottom: 16,
-        }}
-      >
-        <Plus size={18} style={{ verticalAlign: -3, marginRight: 6 }} />
+      {/* Add exercise — a ghost pill, not a dashed outline. The old border was
+          1.37:1, which is indistinguishable from no border at all. */}
+      <button onClick={() => setShowPicker(true)} className="btn-secondary btn-block" style={{ marginBottom: 16 }}>
+        <Plus size={18} />
         Add Exercise
       </button>
 
@@ -475,7 +459,7 @@ export default function LogWorkout() {
         value={sessionNotes}
         onChange={e => setSessionNotes(e.target.value)}
         rows={2}
-        style={{ marginBottom: 16, resize: 'none' }}
+        style={{ marginBottom: 16 }}
       />
 
       {saveError && (
@@ -487,33 +471,17 @@ export default function LogWorkout() {
             alignItems: 'flex-start',
             padding: 12,
             marginBottom: 16,
-            borderRadius: 'var(--radius-md)',
-            background: 'var(--color-fill)',
-            borderLeft: '3px solid var(--color-danger)',
+            borderRadius: 'var(--rounded-md)',
+            background: 'var(--fill)',
+            borderLeft: '3px solid var(--destructive)',
           }}
         >
-          <CircleAlert size={18} color="var(--color-danger)" style={{ flexShrink: 0, marginTop: 1 }} />
-          <span style={{ fontSize: 'var(--type-subhead)', color: 'var(--color-text)' }}>{saveError}</span>
+          <CircleAlert size={18} color="var(--destructive)" style={{ flexShrink: 0, marginTop: 1 }} />
+          <span style={{ fontSize: 'var(--type-subhead)', color: 'var(--ink)' }}>{saveError}</span>
         </div>
       )}
 
-      <button
-        onClick={handleSave}
-        disabled={saving || loggedCount === 0}
-        style={{
-          width: '100%',
-          minHeight: 52,
-          background: 'var(--color-accent)',
-          color: 'var(--color-on-accent)',
-          fontWeight: 600,
-          fontSize: 'var(--type-headline)',
-          borderRadius: 'var(--radius-md)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: 8,
-        }}
-      >
+      <button onClick={handleSave} disabled={saving || loggedCount === 0} className="btn-primary btn-block" style={{ minHeight: 50 }}>
         <Check size={20} />
         {saving ? 'Saving…' : loggedCount === 0 ? 'Enter a set to save' : 'Save Session'}
       </button>

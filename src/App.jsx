@@ -18,7 +18,7 @@ const AUTH_KEY = 'gym_auth'
 
 function PageFallback() {
   return (
-    <div style={{ padding: '80px 24px', textAlign: 'center', color: 'var(--color-muted)' }}>Loading…</div>
+    <div style={{ padding: '80px 24px', textAlign: 'center', color: 'var(--ink-muted)' }}>Loading…</div>
   )
 }
 

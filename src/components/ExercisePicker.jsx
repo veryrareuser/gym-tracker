@@ -116,7 +116,7 @@ export default function ExercisePicker({ onClose, onSelect, usedIds = [] }) {
         maxWidth: 520,
         height: viewport.height,
         zIndex: 300,
-        background: 'var(--color-bg)',
+        background: 'var(--canvas)',
         display: 'flex',
         flexDirection: 'column',
       }}
@@ -127,35 +127,36 @@ export default function ExercisePicker({ onClose, onSelect, usedIds = [] }) {
         style={{
           flexShrink: 0,
           paddingTop: 'env(safe-area-inset-top)',
-          borderBottom: '1px solid var(--color-border)',
+          borderBottom: '1px solid var(--line)',
           borderRadius: 0,
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px 6px' }}>
-          <button onClick={onClose} className="hit" style={{ color: 'var(--color-accent-text)', fontSize: 'var(--type-body)' }}>
+          <button onClick={onClose} className="btn-quiet" style={{ fontSize: 'var(--type-body)' }}>
             Cancel
           </button>
-          <div style={{ flex: 1, textAlign: 'center', fontWeight: 600, fontSize: 'var(--type-headline)' }}>
+          <div style={{ flex: 1, textAlign: 'center', fontWeight: 600, fontSize: 'var(--type-headline)', letterSpacing: 'var(--tracking-headline)' }}>
             Add Exercise
           </div>
           {/* Balances the Cancel button so the title stays optically centred. */}
           <div style={{ width: 62 }} />
         </div>
 
-        {/* Search field */}
-        <div style={{ padding: '0 12px 10px' }}>
+        {/* search-input: the spec makes search a pill too, matching the CTA grammar. */}
+        <div style={{ padding: '0 var(--gutter) 12px' }}>
           <div
             style={{
               display: 'flex',
               alignItems: 'center',
               gap: 8,
-              background: 'var(--color-fill)',
-              borderRadius: 'var(--radius-sm)',
-              padding: '0 10px',
+              background: 'var(--surface)',
+              border: '1px solid var(--line-control)',
+              borderRadius: 'var(--rounded-pill)',
+              padding: '0 6px 0 17px',
               height: 'var(--hit-min)',
             }}
           >
-            <Search size={17} color="var(--color-muted)" style={{ flexShrink: 0 }} />
+            <Search size={15} color="var(--ink-muted)" style={{ flexShrink: 0 }} />
             <input
               ref={inputRef}
               type="search"
@@ -169,13 +170,19 @@ export default function ExercisePicker({ onClose, onSelect, usedIds = [] }) {
                 border: 'none',
                 padding: 0,
                 height: '100%',
-                fontSize: 'var(--type-callout)',
+                minHeight: 0,
                 minWidth: 0,
+                fontSize: 'var(--type-body)',
               }}
             />
             {query && (
-              <button onClick={() => setQuery('')} aria-label="Clear search" className="hit" style={{ width: 32, minHeight: 32 }}>
-                <X size={16} color="var(--color-muted)" />
+              <button
+                onClick={() => setQuery('')}
+                aria-label="Clear search"
+                className="btn-icon"
+                style={{ width: 32, minWidth: 32, minHeight: 32 }}
+              >
+                <X size={16} color="var(--ink-muted)" />
               </button>
             )}
           </div>
@@ -241,8 +248,8 @@ export default function ExercisePicker({ onClose, onSelect, usedIds = [] }) {
       <div
         style={{
           padding: '8px 16px 4px',
-          fontSize: 'var(--type-footnote)',
-          color: 'var(--color-muted)',
+          fontSize: 'var(--type-subhead)',
+          color: 'var(--ink-muted)',
           flexShrink: 0,
         }}
       >
@@ -256,17 +263,17 @@ export default function ExercisePicker({ onClose, onSelect, usedIds = [] }) {
       </div>
 
       {/* Results */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '0 12px 16px', overscrollBehavior: 'contain' }}>
+      <div style={{ flex: 1, overflowY: 'auto', padding: '0 var(--gutter) 17px', overscrollBehavior: 'contain' }}>
         {status === 'ready' && results.length === 0 && (
           <div
             style={{
               textAlign: 'center',
               padding: '48px 24px',
-              color: 'var(--color-muted)',
+              color: 'var(--ink-muted)',
             }}
           >
-            <Dumbbell size={36} style={{ opacity: 0.3, marginBottom: 12 }} />
-            <p style={{ margin: '0 0 4px', fontWeight: 600, color: 'var(--color-text)' }}>No exercises found</p>
+            <Dumbbell size={36} color="var(--ink-faint)" style={{ marginBottom: 12 }} />
+            <p style={{ margin: '0 0 4px', fontWeight: 600, color: 'var(--ink)' }}>No exercises found</p>
             <p style={{ margin: 0, fontSize: 'var(--type-subhead)' }}>
               {query ? `Nothing matches “${query}”.` : 'Try a different filter.'}
             </p>
@@ -287,14 +294,14 @@ export default function ExercisePicker({ onClose, onSelect, usedIds = [] }) {
                 gap: 12,
                 width: '100%',
                 textAlign: 'left',
-                padding: '10px 8px',
-                borderRadius: 'var(--radius-md)',
+                justifyContent: 'flex-start',
+                padding: '12px',
+                borderRadius: 'var(--rounded-md)',
                 marginBottom: 2,
                 opacity: alreadyAdded ? 0.45 : 1,
-                cursor: alreadyAdded ? 'default' : 'pointer',
               }}
             >
-              <span className="thumb" style={{ width: 52, height: 52 }}>
+              <span className="thumb" style={{ width: 48, height: 48 }}>
                 <img src={imageUrl(ex.image)} alt="" loading="lazy" decoding="async" />
               </span>
 
@@ -314,19 +321,19 @@ export default function ExercisePicker({ onClose, onSelect, usedIds = [] }) {
                   {ex.name}
                 </span>
                 <span style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                  <span className="chip" style={{ minHeight: 22, fontSize: 'var(--type-min)' }}>
+                  <span className="chip" style={{ minHeight: 22, fontSize: 'var(--type-fine)' }}>
                     {titleCase(ex.body_part)}
                   </span>
                   <span
                     className="chip"
-                    style={{ minHeight: 22, fontSize: 'var(--type-min)', textTransform: 'capitalize' }}
+                    style={{ minHeight: 22, fontSize: 'var(--type-fine)', textTransform: 'capitalize' }}
                   >
                     {ex.equipment}
                   </span>
                 </span>
               </span>
 
-              {alreadyAdded && <Check size={18} color="var(--color-muted)" style={{ flexShrink: 0 }} />}
+              {alreadyAdded && <Check size={18} color="var(--ink-muted)" style={{ flexShrink: 0 }} />}
             </button>
           )
         })}
