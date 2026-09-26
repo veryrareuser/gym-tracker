@@ -23,6 +23,10 @@ create table if not exists workout_sessions (
 );
 
 -- 3. Exercise logs (link session → exercise)
+-- "order" is integer here, unlike exercises."order" which must be bigint. This
+-- column only ever receives an array index from LogWorkout, never a timestamp.
+-- user_id is added by supabase-rls-fix.sql; it is null on a fresh create and
+-- must be backfilled before it can be set NOT NULL.
 create table if not exists exercise_logs (
   id text primary key,
   session_id text references workout_sessions(id) on delete cascade,
@@ -46,8 +50,16 @@ create index if not exists idx_exercise_logs_exercise on exercise_logs(exercise_
 create index if not exists idx_set_entries_log on set_entries(exercise_log_id);
 create index if not exists idx_sessions_date on workout_sessions(date desc);
 
--- Row-level security: disable for personal single-user app
--- (anon key is already protected behind the password gate)
+-- ── Row-level security ──────────────────────────────────────────────────────
+--
+-- ⚠  The policies below are the ORIGINAL ones and are kept only to document the
+-- ⚠  starting point. DO NOT RUN THIS SECTION. `using (true)` on a catch-all policy
+-- ⚠  meant the publishable key could read and rewrite everything, and the comment
+-- ⚠  claiming it was "protected behind the password gate" was wrong — a client-side
+-- ⚠  gate does not constrain the database at all.
+--
+-- The live database now uses per-account policies scoped to the session token.
+-- See supabase-rls-fix.sql for the authoritative set.
 alter table exercises enable row level security;
 alter table workout_sessions enable row level security;
 alter table exercise_logs enable row level security;
