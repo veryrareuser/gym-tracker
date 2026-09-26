@@ -8,6 +8,8 @@ import {
 import { getSessions, getExercises } from '../lib/db'
 import { calcVolume, getTopSet } from '../lib/utils'
 import { useColorScheme, useChartTheme, CHART_COLORS, ChartThemeContext } from '../lib/useColorScheme'
+import { currentUsername } from '../lib/auth'
+import Leaderboard from '../components/Leaderboard'
 
 /** Declared at module scope so it is not remounted on every render. */
 function ChartTooltip({ active, payload, label, unit }) {
@@ -40,6 +42,7 @@ export default function Analytics() {
   const [selectedExercise, setSelectedExercise] = useState('')
   const scheme = useColorScheme()
   const c = CHART_COLORS[scheme]
+  const username = currentUsername()
 
   useEffect(() => {
     Promise.all([getSessions(), getExercises()]).then(([s, e]) => {
@@ -218,9 +221,11 @@ export default function Analytics() {
                 </div>
               ))
             )}
-          </section>
-        </>
-      )}
+            </section>
+          </>
+        )}
+
+        <Leaderboard username={username} />
       </div>
     </ChartThemeContext.Provider>
   )

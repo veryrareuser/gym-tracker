@@ -1,7 +1,9 @@
 // src/components/Layout.jsx
+import { useState } from 'react'
 import { Outlet, NavLink } from 'react-router-dom'
-import { House, Dumbbell, CalendarDays, ChartLine, ListChecks } from 'lucide-react'
+import { House, Dumbbell, CalendarDays, ChartLine, ListChecks, LogOut } from 'lucide-react'
 import RestTimer from './RestTimer'
+import ConfirmDialog from './ConfirmDialog'
 
 const navItems = [
   { to: '/', icon: House, label: 'Home' },
@@ -11,7 +13,9 @@ const navItems = [
   { to: '/exercises', icon: ListChecks, label: 'Exercises' },
 ]
 
-export default function Layout() {
+export default function Layout({ onSignOut, username }) {
+  const [confirmingSignOut, setConfirmingSignOut] = useState(false)
+
   return (
     <div
       style={{
@@ -23,6 +27,31 @@ export default function Layout() {
         background: 'var(--canvas)',
       }}
     >
+      <header
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          paddingTop: 'env(safe-area-inset-top)',
+          paddingBottom: 8,
+          paddingLeft: 'var(--gutter)',
+          paddingRight: 8,
+          minHeight: 44,
+        }}
+      >
+        <span style={{ flex: 1, fontSize: 'var(--type-fine)', color: 'var(--ink-muted)' }}>
+          {username ? `Signed in as ${username}` : ''}
+        </span>
+        <button
+          onClick={() => setConfirmingSignOut(true)}
+          aria-label="Sign out"
+          className="btn-icon"
+          style={{ width: 36, minWidth: 36, minHeight: 36 }}
+        >
+          <LogOut size={17} color="var(--ink-muted)" />
+        </button>
+      </header>
+
       {/* Page content. This is the scroll container, so the body never scrolls and
           the tab bar can stay fixed without a scroll listener. */}
       <main style={{ flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
@@ -76,6 +105,18 @@ export default function Layout() {
           </NavLink>
         ))}
       </nav>
+
+      <ConfirmDialog
+        open={confirmingSignOut}
+        title="Sign out?"
+        message="Your data stays synced to your account. You'll need your username and password to get back in."
+        confirmLabel="Sign Out"
+        onCancel={() => setConfirmingSignOut(false)}
+        onConfirm={() => {
+          setConfirmingSignOut(false)
+          onSignOut?.()
+        }}
+      />
     </div>
   )
 }

@@ -6,9 +6,13 @@ import { getExercises, getSessions, saveExercise, saveSession } from '../lib/db'
 import { generateId, todayISO } from '../lib/utils'
 import { imageUrl } from '../lib/exerciseDb'
 import { startTimer } from '../lib/timer'
+import { currentUserId } from '../lib/auth'
 import ExercisePicker from '../components/ExercisePicker'
 
-const DRAFT_KEY = 'gym_draft'
+// The draft is namespaced per user for the same reason the session cache is: an
+// in-progress workout belongs to whoever is typing it, and on a shared device an
+// unprefixed key would hand your half-finished session to the next person.
+const draftKey = () => `gym_draft:${currentUserId() ?? 'anon'}`
 const REST_OPTIONS = [60, 90, 120, 180]
 
 function emptySet(n) {
@@ -74,7 +78,7 @@ export default function LogWorkout() {
       }
 
       // New session — restore a draft before falling back to a blank slate.
-      const raw = localStorage.getItem(DRAFT_KEY)
+      const raw = localStorage.getItem(draftKey())
       if (raw) {
         try {
           const draft = JSON.parse(raw)
@@ -86,7 +90,7 @@ export default function LogWorkout() {
           loadedRef.current = true
           return
         } catch {
-          localStorage.removeItem(DRAFT_KEY)
+          localStorage.removeItem(draftKey())
         }
       }
 
@@ -102,12 +106,12 @@ export default function LogWorkout() {
   // Auto-save the draft on every change, new sessions only.
   useEffect(() => {
     if (!loadedRef.current || isEditMode) return
-    localStorage.setItem(DRAFT_KEY, JSON.stringify({ logs, date, sessionNotes }))
+    localStorage.setItem(draftKey(), JSON.stringify({ logs, date, sessionNotes }))
     setHasDraft(logs.some(l => l.set_entries.some(s => s.weight || s.reps)))
   }, [logs, date, sessionNotes, isEditMode])
 
   function discardDraft() {
-    localStorage.removeItem(DRAFT_KEY)
+    localStorage.removeItem(draftKey())
     setHasDraft(false)
     setDate(todayISO())
     setSessionNotes('')
@@ -198,7 +202,7 @@ export default function LogWorkout() {
     }
     try {
       await saveSession(session)
-      localStorage.removeItem(DRAFT_KEY)
+      localStorage.removeItem(draftKey())
       navigate('/history')
     } catch (err) {
       setSaveError(`Could not save this session: ${err.message}`)

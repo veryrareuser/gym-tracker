@@ -12,6 +12,9 @@ dist
 dist-ssr
 *.local
 
+# Manual database dumps — contain real training data, never commit
+backups/
+
 # Source dataset (17.5 MB) — regenerate the committed slim index instead
 # with: node scripts/build-exercise-index.mjs
 public/exercises.json

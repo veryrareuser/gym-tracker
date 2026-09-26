@@ -9,6 +9,9 @@
     "lint": "oxlint",
     "preview": "vite preview",
     "gen:exercises": "node scripts/build-exercise-index.mjs",
+    "backup": "node scripts/backup.mjs",
+    "account": "node scripts/create-account.mjs",
+    "verify:lockdown": "node scripts/verify-lockdown.mjs",
     "predeploy": "npm run build",
     "deploy": "gh-pages -d dist"
   },

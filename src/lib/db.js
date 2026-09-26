@@ -2,22 +2,53 @@
 // Abstraction layer: reads/writes localStorage, syncs to Supabase when available.
 import { supabase } from './supabaseClient'
 import { imageUrl, DEFAULT_EXERCISE_IMAGE_MAP } from './exerciseDb'
+import { currentUserId } from './auth'
 
-const KEYS = {
-  exercises: 'gym_exercises',
-  sessions: 'gym_sessions',
-}
+/*
+ * Local cache keys are namespaced per user id. Without this, two people sharing a
+ * device would read each other's cached sessions straight out of localStorage,
+ * bypassing RLS entirely. The keys that used to be unprefixed are read once as a
+ * legacy fallback and then dropped, since the cloud copy is authoritative.
+ *
+ * The rest timer is intentionally NOT namespaced: it is transient, belongs to
+ * whoever is holding the phone, and dies on its own within minutes.
+ */
+const cacheKey = (base, userId) => (userId ? `${base}:${userId}` : base)
+
+const LEGACY_KEYS = ['gym_exercises', 'gym_sessions', 'gym_draft']
 
 /* ─── Local helpers ─── */
-function localGet(key) {
+function localGet(base) {
+  const key = cacheKey(base, currentUserId())
   try {
-    return JSON.parse(localStorage.getItem(key)) || []
+    const raw = localStorage.getItem(key)
+    if (raw) return JSON.parse(raw) || []
   } catch {
     return []
   }
+  // Signed in, but this user has no cache yet and an unprefixed key exists. Adopt
+  // it once, then remove it so it cannot leak to the next person on this device.
+  const legacy = localStorage.getItem(base)
+  if (legacy) {
+    localStorage.removeItem(base)
+    try {
+      const parsed = JSON.parse(legacy) || []
+      localStorage.setItem(key, JSON.stringify(parsed))
+      return parsed
+    } catch {
+      return []
+    }
+  }
+  return []
 }
-function localSet(key, value) {
-  localStorage.setItem(key, JSON.stringify(value))
+
+function localSet(base, value) {
+  localStorage.setItem(cacheKey(base, currentUserId()), JSON.stringify(value))
+}
+
+/** Called on sign-out so the next person on the device starts from a clean slate. */
+export function purgeUnscopedCaches() {
+  for (const key of LEGACY_KEYS) localStorage.removeItem(key)
 }
 
 /**
@@ -31,6 +62,16 @@ function unwrap({ error }, context) {
     err.context = context
     throw err
   }
+}
+
+/**
+ * The user id every write must carry. RLS's `with check` clause rejects a mismatch,
+ * so failing here gives a clearer message than letting Postgres refuse the row.
+ */
+function requireUserId(action) {
+  const id = currentUserId()
+  if (!id) throw new Error(`Cannot ${action} while signed out.`)
+  return id
 }
 
 /* ─── Default exercises ─── */
@@ -74,24 +115,24 @@ export async function getExercises() {
     const { data, error } = await supabase.from('exercises').select('*').order('order')
     if (!error && data) {
       const hydrated = withFallbackImages(data)
-      localSet(KEYS.exercises, hydrated)
+      localSet('exercises', hydrated)
       return hydrated
     }
   }
-  const local = localGet(KEYS.exercises)
+  const local = localGet('exercises')
   if (local.length === 0) {
-    localSet(KEYS.exercises, DEFAULT_EXERCISES)
+    localSet('exercises', DEFAULT_EXERCISES)
     return DEFAULT_EXERCISES
   }
   return withFallbackImages(local)
 }
 
 export async function saveExercise(exercise) {
-  const exercises = localGet(KEYS.exercises)
+  const exercises = localGet('exercises')
   const idx = exercises.findIndex(e => e.id === exercise.id)
   if (idx >= 0) exercises[idx] = exercise
   else exercises.push(exercise)
-  localSet(KEYS.exercises, exercises)
+  localSet('exercises', exercises)
 
   if (supabase) {
     // exercise_logs.exercise_id references exercises(id). A row that is never
@@ -109,7 +150,7 @@ export async function deleteExercise(id) {
     // rejected — surface that instead of pretending it worked.
     unwrap(await supabase.from('exercises').delete().eq('id', id), `delete exercise ${id}`)
   }
-  localSet(KEYS.exercises, localGet(KEYS.exercises).filter(e => e.id !== id))
+  localSet('exercises', localGet('exercises').filter(e => e.id !== id))
 }
 
 /* ─── Sessions ─── */
@@ -121,11 +162,11 @@ export async function getSessions() {
       .order('date', { ascending: false })
     if (!error && data) {
       const sessions = data.map(s => ({ ...s, exercise_logs: sortLogs(s.exercise_logs) }))
-      localSet(KEYS.sessions, sessions)
+      localSet('sessions', sessions)
       return sessions
     }
   }
-  return localGet(KEYS.sessions)
+  return localGet('sessions')
     .map(s => ({ ...s, exercise_logs: sortLogs(s.exercise_logs) }))
     .sort((a, b) => b.date.localeCompare(a.date))
 }
@@ -138,11 +179,12 @@ function sortLogs(logs) {
 }
 
 export async function saveSession(session) {
-  const sessions = localGet(KEYS.sessions)
+  const userId = requireUserId('save a session')
+  const sessions = localGet('sessions')
   const idx = sessions.findIndex(s => s.id === session.id)
   if (idx >= 0) sessions[idx] = session
   else sessions.push(session)
-  localSet(KEYS.sessions, sessions)
+  localSet('sessions', sessions)
 
   if (!supabase) return session
 
@@ -152,6 +194,7 @@ export async function saveSession(session) {
       id: session.id,
       date: session.date,
       notes: session.notes || null,
+      user_id: userId,
     }),
     `save session ${session.id}`,
   )
@@ -192,6 +235,7 @@ export async function saveSession(session) {
           session_id: session.id,
           exercise_id: log.exercise_id,
           order: log.order,
+          user_id: userId,
         })),
       ),
       `save logs of session ${session.id}`,
@@ -208,6 +252,7 @@ export async function saveSession(session) {
             weight: toNumberOrNull(s.weight),
             reps: toNumberOrNull(s.reps),
             note: s.note || null,
+            user_id: userId,
           })),
         ),
         `save sets of session ${session.id}`,
@@ -231,7 +276,7 @@ export async function deleteSession(id) {
     // and set_entries.
     unwrap(await supabase.from('workout_sessions').delete().eq('id', id), `delete session ${id}`)
   }
-  localSet(KEYS.sessions, localGet(KEYS.sessions).filter(s => s.id !== id))
+  localSet('sessions', localGet('sessions').filter(s => s.id !== id))
 }
 
 /* ─── Sync from Supabase to localStorage (call on app init when online) ─── */
