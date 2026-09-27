@@ -1,11 +1,11 @@
 // src/pages/Analytics.jsx
 import { useEffect, useState, useMemo } from 'react'
-import { TrendingUp, Zap, ChevronDown, Eye } from 'lucide-react'
+import { TrendingUp, Zap, ChevronDown } from 'lucide-react'
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   BarChart, Bar, Cell,
 } from 'recharts'
-import { getSessions, getExercises, getMyProfile, setProfileVisible } from '../lib/db'
+import { getSessions, getExercises } from '../lib/db'
 import { calcVolume, getTopSet } from '../lib/utils'
 import { useColorScheme, useChartTheme, CHART_COLORS, ChartThemeContext } from '../lib/useColorScheme'
 import { currentUsername } from '../lib/auth'
@@ -41,11 +41,6 @@ export default function Analytics() {
   const [sessions, setSessions] = useState([])
   const [exercises, setExercises] = useState([])
   const [selectedExercise, setSelectedExercise] = useState('')
-  const [profileVisible, setProfileVisibleState] = useState(true)
-  const [savingVisibility, setSavingVisibility] = useState(false)
-  // Bumping this re-fetches the leaderboard, so opting out disappears from the
-  // standings immediately instead of leaving a stale row behind.
-  const [leaderboardKey, setLeaderboardKey] = useState(0)
   const scheme = useColorScheme()
   const c = CHART_COLORS[scheme]
   const username = currentUsername()
@@ -56,23 +51,7 @@ export default function Analytics() {
       setExercises(e)
       if (e.length > 0) setSelectedExercise(e[0].id)
     })
-    getMyProfile()
-      .then(p => p && setProfileVisibleState(p.profileVisible))
-      .catch(() => {})
   }, [])
-
-  async function toggleVisibility(next) {
-    setSavingVisibility(true)
-    try {
-      const applied = await setProfileVisible(next)
-      setProfileVisibleState(applied)
-      setLeaderboardKey(k => k + 1)
-    } catch {
-      setProfileVisibleState(profileVisible)
-    } finally {
-      setSavingVisibility(false)
-    }
-  }
 
   // Only offer exercises that actually have logged sets, so the picker never
   // lands on an exercise that cannot render a chart.
@@ -213,58 +192,7 @@ export default function Analytics() {
         </>
       )}
 
-      {/* Outside the sessions conditional on purpose: a privacy control that only
-          appeared once you had logged something would be unreachable for a new
-          account, which is exactly the account most likely to want to opt out. */}
-      <section className="card" style={{ padding: 17, marginBottom: 8 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-          <Eye size={18} color="var(--primary)" />
-          <h2 style={{ fontSize: 'var(--type-headline)', fontWeight: 600, margin: 0 }}>Profile Visibility</h2>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <p style={{ margin: 0, fontSize: 'var(--type-subhead)', color: 'var(--ink-muted)', flex: 1 }}>
-            {profileVisible
-              ? 'You appear on the leaderboard, and your records are visible to the other account.'
-              : 'You are hidden. You disappear from the leaderboard and your records are unreachable.'}
-          </p>
-          <button
-            type="button"
-            role="switch"
-            aria-checked={profileVisible}
-            aria-label="Share my profile with the other account"
-            disabled={savingVisibility}
-            onClick={() => toggleVisibility(!profileVisible)}
-            style={{
-              width: 51,
-              height: 31,
-              minWidth: 51,
-              borderRadius: 'var(--rounded-pill)',
-              border: 'none',
-              padding: 0,
-              flexShrink: 0,
-              position: 'relative',
-              background: profileVisible ? 'var(--primary)' : 'var(--line-control)',
-              opacity: savingVisibility ? 0.6 : 1,
-              transition: 'background 0.18s ease',
-            }}
-          >
-            <span
-              style={{
-                position: 'absolute',
-                top: 2,
-                left: profileVisible ? 22 : 2,
-                width: 27,
-                height: 27,
-                borderRadius: '50%',
-                background: '#fff',
-                transition: 'left 0.18s ease',
-              }}
-            />
-          </button>
-        </div>
-      </section>
-
-        <Leaderboard username={username} refreshKey={leaderboardKey} />
+        <Leaderboard username={username} />
       </div>
     </ChartThemeContext.Provider>
   )

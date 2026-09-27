@@ -1,11 +1,13 @@
 // src/components/Leaderboard.jsx
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { Trophy, Medal, ChevronDown, EyeOff } from 'lucide-react'
 import { supabase } from '../lib/supabaseClient'
+import { setProfileVisible } from '../lib/db'
 import PersonalRecords from './PersonalRecords'
 
 /**
- * Standings across accounts, and each account's personal records on demand.
+ * Standings across accounts, each account's personal records on demand, and the
+ * caller's own switch for appearing in it at all.
  *
  * Two different levels of visibility, deliberately separated:
  *
@@ -16,38 +18,61 @@ import PersonalRecords from './PersonalRecords'
  *     a friend trains and what they have lifted — not their history, their volume, or
  *     their notes.
  *
- * Both respect the profile owner's switch. Opting out removes the account from the
- * standings entirely, which also removes the only way to reach its records.
+ * The switch lives in this card rather than in a section of its own: it governs
+ * membership of exactly this list, so a separate heading and icon restated what the
+ * switch next to them already said.
  *
  * @param {string} username  the caller's own username, so their row can be marked
- * @param {number} refreshKey  bump to re-fetch after the visibility switch changes
  */
-export default function Leaderboard({ username, refreshKey = 0 }) {
-  // The fetched standings are tagged with the refreshKey they belong to. Stale data is
-  // then treated as still-loading during render, rather than resetting state inside the
-  // effect — resetting there is what would trigger a cascading render.
-  const [result, setResult] = useState({ key: -1, rows: null, error: null })
+export default function Leaderboard({ username }) {
+  // Standings plus a request counter. load() bumps the counter and only writes its
+  // result if no newer request started meanwhile, so a slow earlier response cannot
+  // overwrite a fresher one. It also clears the rows up front, which is what puts the
+  // card into its loading state.
+  const requestId = useRef(0)
+  const [standings, setStandings] = useState({ rows: null, error: null })
   const [openName, setOpenName] = useState(null)
   const [records, setRecords] = useState({})
   const [loadingName, setLoadingName] = useState(null)
+  const [profileVisible, setVisible] = useState(true)
+  const [saving, setSaving] = useState(false)
+
+  const fetchStandings = useCallback(async (showLoading = true) => {
+    const id = ++requestId.current
+    if (showLoading) setStandings({ rows: null, error: null })
+    const [{ data, error }, me] = await Promise.all([
+      supabase.rpc('leaderboard'),
+      supabase.rpc('whoami'),
+    ])
+    if (id !== requestId.current) return
+    const row = Array.isArray(me.data) ? me.data[0] : me.data
+    if (row) setVisible(row.profile_visible !== false)
+    setStandings({ rows: error ? null : Array.isArray(data) ? data : [], error: error ? error.message : null })
+  }, [])
 
   useEffect(() => {
-    let cancelled = false
-    supabase.rpc('leaderboard').then(({ data, error: err }) => {
-      if (cancelled) return
-      setResult({
-        key: refreshKey,
-        rows: err ? null : Array.isArray(data) ? data : [],
-        error: err ? err.message : null,
-      })
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [refreshKey])
+    // No showLoading: the state already starts empty, which *is* the loading state, so
+    // resetting it synchronously here would only cascade an extra render.
+    // The rule flags the setState inside fetchStandings, but it cannot see that it sits
+    // after an await — this is mount-time fetching, which is what effects are for.
+    // eslint-disable-next-line react/set-state-in-effect
+    fetchStandings(false)
+  }, [fetchStandings])
 
-  const rows = result.key === refreshKey ? result.rows : null
-  const error = result.key === refreshKey ? result.error : null
+  const rows = standings.rows
+  const error = standings.error
+
+  async function toggleVisibility(next) {
+    setSaving(true)
+    try {
+      setVisible(await setProfileVisible(next))
+      await fetchStandings()
+    } catch {
+      setVisible(profileVisible)
+    } finally {
+      setSaving(false)
+    }
+  }
 
   const openProfile = useCallback(async name => {
     if (openName === name) {
@@ -114,7 +139,7 @@ export default function Leaderboard({ username, refreshKey = 0 }) {
 
       {rows.length === 0 ? (
         <p style={{ margin: 0, fontSize: 'var(--type-subhead)', color: 'var(--ink-muted)' }}>
-          Nobody is sharing a profile yet.
+          {profileVisible ? 'Nobody is sharing a profile yet.' : "You're hidden, so the board looks empty. Your switch is below."}
         </p>
       ) : (
         <>
@@ -216,6 +241,64 @@ export default function Leaderboard({ username, refreshKey = 0 }) {
             Volume in kg over the trailing 30 days. Only totals are shared here — opening a profile reveals that
             person's best set per exercise, never the sessions behind them.
           </p>
+
+          {/* One boolean, so one hairline-separated row. A card with its own icon and
+              heading restated what the switch beside it already says. */}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 12,
+              marginTop: 14,
+              paddingTop: 13,
+              borderTop: '1px solid var(--line)',
+            }}
+          >
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 'var(--type-subhead)', fontWeight: 600 }}>Show my profile</div>
+              <div style={{ fontSize: 'var(--type-fine)', color: 'var(--ink-muted)' }}>
+                {profileVisible ? 'Your standings and records are visible to others.' : 'You are hidden.'}
+              </div>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={profileVisible}
+              aria-label="Show my profile to the other account"
+              disabled={saving}
+              onClick={() => toggleVisibility(!profileVisible)}
+              style={{ flexShrink: 0, width: 44, minWidth: 44 }}
+            >
+              {/* Track 44x26 with a 20px knob inset 3px. The previous 51x31 track carried a
+                  27px knob, which left 2px of blue at the widest point — the knob read as a
+                  crescent and the control outshouted its own heading. The button keeps the
+                  global 44px min-height, so the hit target is still a full 44px. */}
+              <span
+                style={{
+                  display: 'block',
+                  position: 'relative',
+                  width: 44,
+                  height: 26,
+                  borderRadius: 'var(--rounded-pill)',
+                  background: profileVisible ? 'var(--primary)' : 'var(--line-control)',
+                  transition: 'background 0.18s ease',
+                }}
+              >
+                <span
+                  style={{
+                    position: 'absolute',
+                    top: 3,
+                    left: profileVisible ? 21 : 3,
+                    width: 20,
+                    height: 20,
+                    borderRadius: '50%',
+                    background: '#fff',
+                    transition: 'left 0.18s ease',
+                  }}
+                />
+              </span>
+            </button>
+          </div>
         </>
       )}
     </section>
