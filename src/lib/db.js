@@ -150,6 +150,7 @@ export async function getExercises() {
 }
 
 export async function saveExercise(exercise) {
+  const userId = requireUserId('save an exercise')
   const exercises = localGet('exercises')
   const idx = exercises.findIndex(e => e.id === exercise.id)
   if (idx >= 0) exercises[idx] = exercise
@@ -157,22 +158,77 @@ export async function saveExercise(exercise) {
   localSet('exercises', exercises)
 
   if (supabase) {
-    // exercise_logs.exercise_id references exercises(id). A row that is never
-    // written here makes every log insert for that exercise fail, so callers
-    // must persist the exercise before writing logs against it.
-    unwrap(await supabase.from('exercises').upsert(exercise), `save exercise ${exercise.id}`)
+    // The library is per-account, so ownership is part of the row AND part of the
+    // conflict target — exercises' primary key is (user_id, id), not id alone.
+    // onConflict is stated explicitly rather than left to PostgREST to infer, so the
+    // upsert cannot silently key on the wrong columns.
+    unwrap(
+      await supabase
+        .from('exercises')
+        .upsert({ ...exercise, user_id: userId }, { onConflict: 'user_id,id' }),
+      `save exercise ${exercise.id}`,
+    )
   }
   return exercise
 }
 
 export async function deleteExercise(id) {
   if (supabase) {
-    // Remote first, so a rejection leaves no local trace. exercise_logs.exercise_id
-    // is NO ACTION, so removing an exercise that past sessions still reference is
-    // rejected — surface that instead of pretending it worked.
-    unwrap(await supabase.from('exercises').delete().eq('id', id), `delete exercise ${id}`)
+    // Remote first, so a rejection leaves no local trace.
+    const { error } = await supabase.from('exercises').delete().eq('id', id)
+    if (error) {
+      // 23503 is a foreign-key violation: exercise_logs references exercises with
+      // NO ACTION, so an exercise that past sessions still use cannot be removed.
+      // Naming it and counting the sessions is far more use than Postgres's raw
+      // constraint text, and the count is the caller's own thanks to RLS.
+      if (error.code === '23503') {
+        const name = localGet('exercises').find(e => e.id === id)?.name || 'That exercise'
+        const { count } = await supabase
+          .from('exercise_logs')
+          .select('id', { count: 'exact', head: true })
+          .eq('exercise_id', id)
+        const n = count ?? 0
+        const err = new Error(
+          `${name} is used in ${n} logged session${n === 1 ? '' : 's'} and can't be deleted. ` +
+            `Past sessions keep referring to it, so it stays in your library.`,
+        )
+        err.context = `delete exercise ${id}`
+        throw err
+      }
+      const err = new Error(error.message)
+      err.context = `delete exercise ${id}`
+      throw err
+    }
   }
   localSet('exercises', localGet('exercises').filter(e => e.id !== id))
+}
+
+/* ─── Public profile (leaderboard visibility) ─── */
+
+/**
+ * The caller's own username and whether their profile is shared.
+ *
+ * whoami() carries the flag so the Progress tab renders the toggle correctly on first
+ * paint without a second request — it is already called on load and on focus.
+ */
+export async function getMyProfile() {
+  const { data, error } = await supabase.rpc('whoami')
+  if (error) throw new Error(error.message)
+  const row = Array.isArray(data) ? data[0] : data
+  if (!row) return null
+  return { username: row.username, profileVisible: row.profile_visible !== false }
+}
+
+/**
+ * Show or hide the caller's profile from other accounts.
+ *
+ * The RPC takes no user id on purpose: it can only ever change the caller's own row.
+ * Accepting an id here would let anyone re-publish a profile that chose to opt out.
+ */
+export async function setProfileVisible(visible) {
+  const { data, error } = await supabase.rpc('set_profile_visible', { p_visible: Boolean(visible) })
+  if (error) throw new Error(error.message)
+  return data !== false
 }
 
 /* ─── Sessions ─── */

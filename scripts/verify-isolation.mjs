@@ -78,7 +78,14 @@ if (!idA) {
   console.error('Could not resolve A\'s account id from whoami().')
   process.exit(1)
 }
-console.log(`  A's account id: ${idA}\n`)
+const meB = await tokenB.rpc('whoami')
+const idB = (Array.isArray(meB.data) ? meB.data[0] : meB.data)?.user_id
+if (!idB) {
+  console.error('Could not resolve B\'s account id from whoami().')
+  process.exit(1)
+}
+console.log(`  A's account id: ${idA}`)
+console.log(`  B's account id: ${idB}\n`)
 
 try {
   // A crashed earlier run would otherwise leave rows that make a later run's counts
@@ -137,7 +144,11 @@ try {
   check('forged token reads no leaderboard', (fb.data?.length ?? 0) === 0, `${fb.data?.length} rows`)
 
   console.log('\n6. exercises."order" accepts a Date.now() value')
-  const o = await tokenA.from('exercises').insert({ id: IDS.exercise, name: 'ZZ Probe', muscle_group: 'Arms', order: Date.now() })
+  // user_id is required: the library is owned, exercises.user_id is NOT NULL, and the
+  // insert policy's with check demands it match the caller. Omitting it is rejected.
+  const o = await tokenA
+    .from('exercises')
+    .insert({ id: IDS.exercise, name: 'ZZ Probe', muscle_group: 'Arms', order: Date.now(), user_id: idA })
   check('insert with a timestamp order', !o.error, o.error?.message?.slice(0, 80))
   const back = await tokenA.from('exercises').select('order').eq('id', IDS.exercise).maybeSingle()
   check('order comes back a number', typeof back.data?.order === 'number', `typeof ${typeof back.data?.order}`)
@@ -148,10 +159,82 @@ try {
   const cols = Object.keys(lb.data?.[0] || {})
   const leak = cols.filter(c => ['id', 'user_id', 'date', 'notes', 'exercise_id', 'exercise_name', 'weight', 'reps'].includes(c))
   check('no raw session fields exposed', leak.length === 0, `columns: ${cols.join(', ')}`)
+  console.log('\n8. the exercise library is per-account')
+  // This reversed a previous decision: exercises used to be a single shared catalogue
+  // that any signed-in account could read and rewrite. It is now owned like every other
+  // table, so these are the assertions that would have failed before.
+  const bSeesOwn = await tokenB.from('exercises').select('id,user_id')
+  const bForeign = (bSeesOwn.data || []).filter(e => e.user_id !== idB)
+  check('B sees only its own exercises', bForeign.length === 0, `${bForeign.length} foreign rows`)
+  const aSeesOwn = await tokenA.from('exercises').select('id,user_id')
+  const aForeign = (aSeesOwn.data || []).filter(e => e.user_id !== idA)
+  check('A sees only its own exercises', aForeign.length === 0, `${aForeign.length} foreign rows`)
+
+  const stolen = await tokenB.from('exercises').insert({ id: `zzsteal${stamp}`, name: 'ZZ Stolen', user_id: idA })
+  check("B cannot insert an exercise owned by A", !!stolen.error, stolen.error ? 'refused' : 'ACCEPTED')
+
+  const editForeign = await tokenB.from('exercises').update({ name: 'ZZ Renamed' }).eq('id', IDS.exercise).select('id')
+  check("B cannot rename A's exercise", (editForeign.data?.length ?? 0) === 0, `${editForeign.data?.length} matched`)
+
+  const aProbe = await tokenA.from('exercises').select('name').eq('id', IDS.exercise).maybeSingle()
+  check("A's exercise is unchanged", aProbe.data?.name === 'ZZ Probe', `name=${aProbe.data?.name}`)
+
+  console.log('\n9. profile visibility is the owner\'s own decision')
+  // set_profile_visible takes no account id, so B calling it cannot touch A. Verified by
+  // flipping B off and confirming A is still listed.
+  const bOff = await tokenB.rpc('set_profile_visible', { p_visible: false })
+  check('B can hide itself', bOff.data === false, `returned ${bOff.data}`)
+  const lbWhileBHidden = await tokenA.rpc('leaderboard')
+  const bRowGone = !(lbWhileBHidden.data || []).some(r => r.username === B.user)
+  check('a hidden account leaves the leaderboard', bRowGone, `rows=${(lbWhileBHidden.data || []).length}`)
+  const bBack = await tokenB.rpc('set_profile_visible', { p_visible: true })
+  check('B can restore itself', bBack.data === true, `returned ${bBack.data}`)
+
+  const aStillThere = await tokenA.rpc('leaderboard')
+  check(
+    'hiding one account never hides the other',
+    (aStillThere.data || []).some(r => r.username === A.user),
+    'A still listed',
+  )
+
+  console.log('\n10. records cross the account boundary only with consent')
+  const prs = await tokenB.rpc('friend_prs', { p_username: A.user })
+  check('B can read A\'s records while A is sharing', !prs.error, prs.error?.message?.slice(0, 70))
+  const prCols = Object.keys((prs.data || [])[0] || {})
+  const prLeak = prCols.filter(c => !['exercise_name', 'weight', 'reps', 'achieved_on'].includes(c))
+  check('records expose no other column', prLeak.length === 0, `columns: ${prCols.join(', ') || '(none)'}`)
+  check('A actually has records to return', (prs.data || []).length > 0, `${(prs.data || []).length} rows`)
+
+  // SECURITY DEFINER bypasses RLS, so the caller's session must be checked inside the
+  // function. This is the assertion that a public key alone cannot read anyone's records.
+  const prsNoToken = await client(null).rpc('friend_prs', { p_username: A.user })
+  check(
+    'the public key alone reads no records',
+    (prsNoToken.data?.length ?? 0) === 0,
+    `${prsNoToken.data?.length ?? '-'} rows`,
+  )
+  const lbNoToken = await client(null).rpc('friend_prs', { p_username: 'nobody-at-all' })
+  check('unknown username is handled quietly', (lbNoToken.data?.length ?? 0) === 0, `${lbNoToken.data?.length ?? '-'} rows`)
+
+  await tokenA.rpc('set_profile_visible', { p_visible: false })
+  const prsHidden = await tokenB.rpc('friend_prs', { p_username: A.user })
+  check("opting out blocks another account's records", (prsHidden.data?.length ?? 0) === 0, `${prsHidden.data?.length ?? '-'} rows`)
+  const lbHidden = await tokenB.rpc('leaderboard')
+  check('opting out removes the leaderboard row', !(lbHidden.data || []).some(r => r.username === A.user), 'A absent')
+  const restored = await tokenA.rpc('set_profile_visible', { p_visible: true })
+  check('A can opt back in', restored.data === true, `returned ${restored.data}`)
 } finally {
+  // Both accounts are left sharing their profile. The visibility assertions above toggle
+  // it, and a run that failed midway must not leave a real person hidden from their
+  // friend's leaderboard.
+  for (const [label, tok] of [['A', tokenA], ['B', tokenB]]) {
+    const back = await tok.rpc('set_profile_visible', { p_visible: true })
+    check(`${label} left sharing their profile`, back.data === true, `returned ${back.data}`)
+  }
+
+  console.log('\ncleanup')
   // Only the rows this run created, and never an account. The old version's cleanup
   // told the user to delete accounts by id, which would have destroyed real data.
-  console.log('\ncleanup')
   for (const [table, id] of [
     ['set_entries', IDS.set],
     ['exercise_logs', IDS.log],
