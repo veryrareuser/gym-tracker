@@ -16,7 +16,9 @@
     "deploy": "gh-pages -d dist",
     "verify:auth": "node scripts/verify-auth-flow.mjs",
     "verify:expiry": "node scripts/verify-session-expiry.mjs",
-    "verify:isolation": "node scripts/verify-isolation.mjs"
+    "verify:isolation": "node scripts/verify-isolation.mjs",
+    "verify:dates": "node scripts/lib/date-helpers.test.mjs",
+    "verify:date-default": "node scripts/verify-date-default.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.116.0",

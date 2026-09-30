@@ -3,7 +3,7 @@ import { useEffect, useState, useRef } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { Plus, Trash2, ChevronDown, ChevronUp, Check, ArrowLeft, RotateCcw, Timer, CircleAlert, Dumbbell } from 'lucide-react'
 import { getExercises, getSessions, saveExercise, saveSession } from '../lib/db'
-import { generateId, todayISO } from '../lib/utils'
+import { generateId, todayISO, formatDate } from '../lib/utils'
 import { imageUrl } from '../lib/exerciseDb'
 import { startTimer } from '../lib/timer'
 import { currentUserId } from '../lib/auth'
@@ -106,8 +106,21 @@ export default function LogWorkout() {
   // Auto-save the draft on every change, new sessions only.
   useEffect(() => {
     if (!loadedRef.current || isEditMode) return
-    localStorage.setItem(draftKey(), JSON.stringify({ logs, date, sessionNotes }))
-    setHasDraft(logs.some(l => l.set_entries.some(s => s.weight || s.reps)))
+    // Only persist a draft that holds something worth restoring.
+    //
+    // This used to write on every render, including the one triggered by merely opening
+    // the page — a draft of nothing but a date. Because the restore path adopts the
+    // draft's date, visiting Log on one day and logging on another silently filed the
+    // workout under the first day. That is exactly how a session dated the 26th ended
+    // up created on the 28th, with only a bare "Discard" chip to hint at it.
+    const hasContent =
+      logs.some(l => l.set_entries.some(s => s.weight || s.reps)) || sessionNotes.trim().length > 0
+    if (hasContent) {
+      localStorage.setItem(draftKey(), JSON.stringify({ logs, date, sessionNotes }))
+    } else {
+      localStorage.removeItem(draftKey())
+    }
+    setHasDraft(hasContent)
   }, [logs, date, sessionNotes, isEditMode])
 
   function discardDraft() {
@@ -233,16 +246,37 @@ export default function LogWorkout() {
         </h1>
         {hasDraft && !isEditMode && (
           <button onClick={discardDraft} className="chip" style={{ minHeight: 36 }}>
-            <RotateCcw size={14} /> Discard
+            <RotateCcw size={14} /> {formatDate(date)}
           </button>
         )}
-        <input
-          type="date"
-          value={date}
-          aria-label="Session date"
-          onChange={e => setDate(e.target.value)}
-          style={{ width: 'auto', flexShrink: 0, fontSize: 'var(--type-subhead)', padding: '0 10px' }}
-        />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+          <input
+            type="date"
+            value={date}
+            max={todayISO()}
+            aria-label="Session date"
+            onChange={e => setDate(e.target.value)}
+            style={{ width: 'auto', flexShrink: 0, fontSize: 'var(--type-subhead)', padding: '0 10px' }}
+          />
+          {/* Standing guard rather than an error message. If the badge is absent, the
+              date is not today — which is the one thing worth noticing here, and the
+              thing that was previously silent. */}
+          {date === todayISO() ? (
+            <span
+              className="tnum"
+              style={{ fontSize: 'var(--type-fine)', color: 'var(--ink-muted)', whiteSpace: 'nowrap' }}
+            >
+              Today
+            </span>
+          ) : (
+            <span
+              className="tnum"
+              style={{ fontSize: 'var(--type-fine)', color: 'var(--destructive)', whiteSpace: 'nowrap' }}
+            >
+              Not today
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Rest duration */}

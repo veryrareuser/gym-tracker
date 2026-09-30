@@ -3,6 +3,7 @@ import { useEffect, useState, useCallback, useRef } from 'react'
 import { Trophy, Medal, ChevronDown, EyeOff } from 'lucide-react'
 import { supabase } from '../lib/supabaseClient'
 import { setProfileVisible } from '../lib/db'
+import { monthStartISO, monthLabel } from '../lib/utils'
 import PersonalRecords from './PersonalRecords'
 
 /**
@@ -41,7 +42,10 @@ export default function Leaderboard({ username }) {
     const id = ++requestId.current
     if (showLoading) setStandings({ rows: null, error: null })
     const [{ data, error }, me] = await Promise.all([
-      supabase.rpc('leaderboard'),
+      // The month comes from the device clock, not the server's. Between local midnight
+      // and 07:00 the server is still in the previous month, and a board that silently
+      // resets a day early is the same defect that misdated early-morning workouts.
+      supabase.rpc('leaderboard', { p_month_start: monthStartISO() }),
       supabase.rpc('whoami'),
     ])
     if (id !== requestId.current) return
@@ -128,13 +132,14 @@ export default function Leaderboard({ username }) {
   }
 
   const colHead = { fontSize: 'var(--type-min)', color: 'var(--ink-muted)', textAlign: 'right', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }
+  const month = monthLabel()
 
   return (
     <section className="card" style={{ padding: 17, marginTop: 8 }}>
       {header}
       <p style={{ margin: '0 0 14px', fontSize: 'var(--type-fine)', color: 'var(--ink-muted)' }}>
-        Ranked on volume over the last 30 days, so it measures recent work rather than who started first. Tap
-        someone to see their records.
+        Ranked on volume this month, so the board resets on the 1st and measures the same
+        stretch for both of you. Tap someone to see their records.
       </p>
 
       {rows.length === 0 ? (
@@ -143,10 +148,10 @@ export default function Leaderboard({ username }) {
         </p>
       ) : (
         <>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 76px 64px 56px', gap: 8, paddingBottom: 8, borderBottom: '1px solid var(--line)' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 68px 64px 48px', gap: 8, paddingBottom: 8, borderBottom: '1px solid var(--line)' }}>
             <div style={colHead} />
-            <div style={colHead}>30-day</div>
-            <div style={colHead}>Best set</div>
+            <div style={colHead}>{month}</div>
+            <div style={colHead}>Best ever</div>
             <div style={colHead}>Sess.</div>
           </div>
 
@@ -175,7 +180,7 @@ export default function Leaderboard({ username }) {
                   }
                   style={{
                     display: 'grid',
-                    gridTemplateColumns: '1fr 76px 64px 56px',
+                    gridTemplateColumns: '1fr 68px 64px 48px',
                     gap: 8,
                     alignItems: 'center',
                     padding: '12px 8px',
@@ -208,13 +213,13 @@ export default function Leaderboard({ username }) {
                     )}
                   </div>
                   <span className="tnum" style={{ textAlign: 'right', fontSize: 'var(--type-subhead)', fontWeight: 600 }}>
-                    {Math.round(Number(row.volume_30d)).toLocaleString()}
+                    {Math.round(Number(row.volume_month)).toLocaleString()}
                   </span>
                   <span className="tnum" style={{ textAlign: 'right', fontSize: 'var(--type-subhead)', color: 'var(--ink-muted)' }}>
                     {Number(row.best_set)}
                   </span>
                   <span className="tnum" style={{ textAlign: 'right', fontSize: 'var(--type-subhead)', color: 'var(--ink-muted)' }}>
-                    {row.sessions_30d}
+                    {row.sessions_month}
                   </span>
                 </div>
 
@@ -238,8 +243,9 @@ export default function Leaderboard({ username }) {
             )
           })}
           <p style={{ margin: '10px 0 0', fontSize: 'var(--type-fine)', color: 'var(--ink-muted)' }}>
-            Volume in kg over the trailing 30 days. Only totals are shared here — opening a profile reveals that
-            person's best set per exercise, never the sessions behind them.
+            Volume in kg for {month}, from the 1st to today. "Best ever" is the heaviest single set
+            either of you has ever lifted, so it carries over between months. Only totals are shared
+            here — opening a profile reveals that person's records, never the sessions behind them.
           </p>
 
           {/* One boolean, so one hairline-separated row. A card with its own icon and

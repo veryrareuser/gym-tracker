@@ -120,6 +120,20 @@ console.log('\n7. a weak password cannot be set through the API')
 const weak = await req('post', 'rpc/login', { body: { p_username: 'x', p_password: 'y' } })
 check('a malformed login is rejected, not coerced', weak.status >= 400, `HTTP ${weak.status}`)
 
+console.log('\n8. no public RPC is ambiguous')
+// CREATE OR REPLACE FUNCTION cannot change a function's argument list, so adding a
+// parameter creates a *second* overload rather than replacing the original. Both stay live
+// and anon-callable, PostgREST returns 300 for an unparameterised call because the
+// argument list is ambiguous, and the dangerous part is that nothing else notices: the
+// schema looks right, and every caller that passes an argument still passes.
+//
+// This is not hypothetical. leaderboard() gained p_month_start and the trailing-30-day
+// version survived beside the per-month one; only an empty call revealed it.
+for (const fn of ['leaderboard', 'whoami', 'login', 'logout', 'friend_prs', 'set_profile_visible']) {
+  const r = await req('post', `rpc/${fn}`, { body: {} })
+  check(`${fn}() is not ambiguous`, r.status !== 300, `HTTP ${r.status}`)
+}
+
 console.log(
   failures === 0
     ? '\nAll checks passed. A stranger with the public key can do nothing.'

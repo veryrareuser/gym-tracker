@@ -3,14 +3,16 @@ import { useEffect, useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ChevronRight, Dumbbell, Trash2, ChevronLeft } from 'lucide-react'
 import { getSessions, getExercises, deleteSession } from '../lib/db'
-import { calcVolume } from '../lib/utils'
+import { calcVolume, todayISO } from '../lib/utils'
 import ConfirmDialog from '../components/ConfirmDialog'
 
 const DAY_LABELS = ['M', 'T', 'W', 'T', 'F', 'S', 'S']
 const MONTH_LABELS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
 
 function CalendarGrid({ year, month, sessionsByDate, onDayClick }) {
-  const today = new Date().toISOString().slice(0, 10)
+  // todayISO, not an inline toISOString: UTC would highlight the wrong day for anyone
+  // east of UTC between local midnight and the offset.
+  const today = todayISO()
   const startOffset = (new Date(year, month, 1).getDay() + 6) % 7 // Monday-first
   const daysInMonth = new Date(year, month + 1, 0).getDate()
 

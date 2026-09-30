@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Dumbbell, Flame, TrendingUp, ChevronRight, Plus } from 'lucide-react'
 import { getSessions, getExercises } from '../lib/db'
-import { formatDate, calcVolume, todayISO } from '../lib/utils'
+import { formatDate, calcVolume, todayISO, localISODate } from '../lib/utils'
 
 export default function Dashboard() {
   const [sessions, setSessions] = useState([])
@@ -24,9 +24,11 @@ export default function Dashboard() {
     const dates = new Set(sessions.map(s => s.date))
     const cursor = new Date()
     // Today not being logged yet should not break yesterday's streak.
-    if (!dates.has(cursor.toISOString().slice(0, 10))) cursor.setDate(cursor.getDate() - 1)
+    // localISODate, not toISOString: a UTC date here would look for the wrong day
+    // between local midnight and the UTC offset, quietly truncating the streak.
+    if (!dates.has(localISODate(cursor))) cursor.setDate(cursor.getDate() - 1)
     let streak = 0
-    while (dates.has(cursor.toISOString().slice(0, 10))) {
+    while (dates.has(localISODate(cursor))) {
       streak++
       cursor.setDate(cursor.getDate() - 1)
     }
