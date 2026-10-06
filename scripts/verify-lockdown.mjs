@@ -134,7 +134,7 @@ for (const fn of ['leaderboard', 'whoami', 'login', 'logout', 'friend_prs', 'set
 
 console.log(
   failures === 0
-    ? '\nAll checks passed. A stranger with the public key can do nothing.'
+    ? '\nAll anonymous access and forged-token checks passed. Login remains public and throttled.'
     : `\n${failures} check(s) FAILED — the database is not locked down as intended.`,
 )
 process.exit(failures === 0 ? 0 : 1)

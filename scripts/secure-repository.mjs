@@ -25,8 +25,12 @@ if (mode === 'configure') {
   } })
   console.log('Pages workflow publishing, dependency alerts/fixes and secret push protection enabled.')
 } else if (mode === 'protect') {
+  const main = await api('GET', '/branches/main')
+  const runs = await api('GET', `/commits/${main.commit.sha}/check-runs`)
+  const verify = runs.check_runs.find(run => run.name === 'verify' && run.app.slug === 'github-actions')
+  if (!verify || verify.conclusion !== 'success') throw new Error('Wait for the latest main GitHub Actions verify check to succeed')
   await api('PUT', '/branches/main/protection', {
-    required_status_checks: { strict: true, contexts: ['verify'] }, enforce_admins: true,
+    required_status_checks: { strict: true, checks: [{context: 'verify', app_id: verify.app.id}] }, enforce_admins: true,
     required_pull_request_reviews: { required_approving_review_count: 0, dismiss_stale_reviews: true },
     restrictions: null, required_linear_history: true, allow_force_pushes: false,
     allow_deletions: false, required_conversation_resolution: true,
