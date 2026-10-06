@@ -114,7 +114,7 @@ check(
   `"${msg1}" vs "${msg2}"`,
 )
 
-console.log('\n7. a weak password cannot be set through the API')
+console.log('\n7. malformed login input is rejected')
 const weak = await req('post', 'rpc/login', { body: { p_username: 'x', p_password: 'y' } })
 check('a malformed login is rejected, not coerced', weak.data === null, `HTTP ${weak.status}`)
 

@@ -37,14 +37,16 @@ if (mode === 'configure') {
   })
   console.log('Protected main: PR + passing verify required, including administrators. Both branches disallow force pushes/deletion.')
 } else if (mode === 'status') {
-  const runs = await api('GET', '/actions/runs?per_page=3')
+  const runs = await api('GET', '/actions/workflows/verify-and-deploy.yml/runs?branch=main&per_page=2')
   console.log(JSON.stringify(runs.workflow_runs.map(({id,name,status,conclusion,head_sha,html_url}) => ({id,name,status,conclusion,head_sha,html_url}))))
   const pages = await api('GET', '/pages')
   console.log(JSON.stringify({pages: pages.html_url, build_type: pages.build_type}))
   const repo = await api('GET', '')
   console.log(JSON.stringify({security: repo.security_and_analysis}))
+  const alerts = await api('GET', '/dependabot/alerts?state=open&per_page=100')
+  console.log(JSON.stringify({openDependencyAlerts: alerts.map(a => ({package: a.dependency.package.name, advisory: a.security_advisory.ghsa_id}))}))
   for (const branch of ['main','gh-pages']) {
     const value = await api('GET', `/branches/${branch}`)
-    console.log(JSON.stringify({branch, protected: value.protected}))
+    console.log(JSON.stringify({branch, protected: value.protected, sha: value.commit.sha}))
   }
 } else throw new Error('Use configure, protect or status')

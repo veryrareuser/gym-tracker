@@ -17,11 +17,13 @@ Lint, production build, date tests and browser-storage cleanup tests pass. Rollb
 
 ## Remaining boundaries
 
-- The owner approved the offered Postgres 17.11.0.003 upgrade, including downtime; it was started through Supabase. Confirm live version and post-upgrade checks before considering it complete.
-- GitHub branch protection must be confirmed after the first verified workflow deployment, so enabling protection cannot block publication of the workflow itself.
+- The owner-approved upgrade to Postgres 17.11.0.003 completed. Live SQL reports PostgreSQL 17.11, all constraints validate, security fixture checks still pass and existing record counts are unchanged.
+- The first production GitHub workflow completed successfully for commit `42c8d5a`. GitHub reports no open dependency alerts. Branch protections are applied separately after this verified initial deployment; confirm their live status using the administrator maintenance script.
 - GitHub Pages shares a user-wide origin and cannot set application response headers or HttpOnly authentication cookies. Meta CSP and frame refusal are mitigations, not substitutes for dedicated hosting with header-based framing/CSP protection and a server-managed session. No destination/domain was supplied; no hosting migration was attempted.
 - No private off-device backup destination was supplied. Local restore verification is complete, but encrypted off-device backups/provider-level recovery remain unresolved. Sensitive dumps must never go into this public repository or Pages artifacts.
 - The owner must enable/verify MFA on GitHub and Supabase provider accounts and replace the historically exposed password anywhere reused. Actual user passwords were not guessed, disclosed or changed by the audit. In-app MFA requires an authentication architecture change and user enrollment; it was not implemented.
 - Throttling bounds expensive login work but does not eliminate distributed denial of service or temporary lockout. Quotas do not replace provider spending/resource controls. Public read-only knowledge of an anon key is expected and is not credential compromise.
 
 Zero known dependency advisories does not mean zero vulnerabilities. These checks cannot prove absence of unknown bugs or prior compromise.
+
+Supabase advisor still flags the deliberately deny-all private tables (RLS without policies) and intentionally callable SECURITY DEFINER RPCs. The latter implement this app's custom session verification, including login before a session exists; arbitrary users do not receive privileged table access. Do not add permissive policies or remove authentication checks merely to silence these generic warnings. See [advisor guidance](https://supabase.com/docs/guides/database/database-linter?lint=0028_anon_security_definer_function_executable).
