@@ -91,18 +91,25 @@ create policy "sets_write"  on public.set_entries for insert to anon, authentica
 create policy "sets_edit"   on public.set_entries for update to anon, authenticated using ((select private.current_account()) = user_id) with check ((select private.current_account()) = user_id);
 create policy "sets_remove" on public.set_entries for delete to anon, authenticated using ((select private.current_account()) = user_id);
 
--- ── exercises: a shared catalogue, for signed-in callers only ────────────────
--- Intentionally NOT per-user. The library holds names and CDN image URLs, not
--- weight data, so sharing it means a new account immediately inherits every
--- exercise already discovered instead of starting from an empty list.
+-- ── exercises: per-account, like every other table ───────────────────────────
+-- This was a SHARED catalogue, readable and writable by any signed-in account,
+-- reasoned as harmless because the library holds names and CDN image URLs rather
+-- than weight data. It was not harmless: one person deleting an exercise removed it
+-- for everyone. It is now owned, exactly like the other three tables.
 --
--- The non-null check is what stops a tokenless caller writing to it. A policy
--- alone is not enough: with anon holding INSERT, a `using (true)` select policy
--- would still leave an open write path.
-create policy "exercises_read"   on public.exercises for select to anon, authenticated using ((select private.current_account()) is not null);
-create policy "exercises_write"  on public.exercises for insert to anon, authenticated with check ((select private.current_account()) is not null);
-create policy "exercises_edit"   on public.exercises for update to anon, authenticated using ((select private.current_account()) is not null) with check ((select private.current_account()) is not null);
-create policy "exercises_remove" on public.exercises for delete to anon, authenticated using ((select private.current_account()) is not null);
+-- The predicate is identical to the ones above, which is the point: there is no
+-- special case left. Note that a tokenless caller no longer gets past it either,
+-- because current_account() is NULL and NULL = user_id is not true.
+--
+-- Ownership is part of exercises' primary key — PRIMARY KEY (user_id, id) — because
+-- id alone made it impossible for two accounts to both hold exercise "1". See the
+-- per_user_exercises_and_shared_profiles migration for the ordering, which is not
+-- negotiable: the old FK must be dropped before the PK, and the account library
+-- must be seeded before the composite FK is added.
+create policy "exercises_read"   on public.exercises for select to anon, authenticated using ((select private.current_account()) = user_id);
+create policy "exercises_write"  on public.exercises for insert to anon, authenticated with check ((select private.current_account()) = user_id);
+create policy "exercises_edit"   on public.exercises for update to anon, authenticated using ((select private.current_account()) = user_id) with check ((select private.current_account()) = user_id);
+create policy "exercises_remove" on public.exercises for delete to anon, authenticated using ((select private.current_account()) = user_id);
 
 -- ── grants ──────────────────────────────────────────────────────────────────
 -- RLS decides rows; grants decide which operations are possible at all. The app
