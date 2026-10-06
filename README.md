@@ -1,75 +1,27 @@
 # Gym Tracker
 
-A mobile-first PWA to track your gym progress. Built with React + Vite + Tailwind CSS, backed by Supabase for cloud sync with localStorage offline fallback.
+Mobile-first workout tracking with React, Vite and Supabase. Accounts use server-side bcrypt password verification and opaque, hashed session tokens—not a password embedded in JavaScript.
 
-## Features
+## Development
 
-- 🔐 Password-protected (password: configured in `src/App.jsx`)
-- 💪 Log workouts with per-set weight + reps tracking
-- 📅 Session history with monthly grouping
-- 📈 Analytics: weight progression charts, volume per session, personal records
-- 🏋️ Manage your exercise list (add, edit, delete)
-- 📡 Syncs across all devices via Supabase
-- 📴 Works offline with localStorage cache
+Run `npm ci`, `npm run dev`, `npm run lint`, `npm run verify:dates` and `npm run build`. The production public Supabase URL and anon key are intentionally public. Never put service-role keys, database passwords or account passwords in Vite variables or Git.
 
-## Tech Stack
+Sessions and workout caches are tab-scoped and sessions expire after seven days. Account security controls change your password and revoke other sessions. A failed remote logout remains retryable. Closing a tab clears its local session; cloud workouts remain saved. Offline caches are not a full backup.
 
-- React 19 + Vite 8
-- Tailwind CSS v4
-- React Router v6 (hash mode for GitHub Pages)
-- Supabase (free tier) for cloud sync
-- Recharts for analytics
-- Lucide React for icons
-- gh-pages for deployment
+## Database security
 
-## Setup
+The retired `supabase-schema.sql` is NOT a setup script. The existing deployment's reviewed hardening migration is in `sql/security-hardening.sql`, with aggregate functions in `sql/secure-aggregates.sql`. These are upgrades to an existing schema, not a fresh-install recipe. Apply through versioned Supabase migrations after backing up and reviewing the target schema. Run `sql/verify-security.sql` for rollback-only fixture verification.
 
-### 1. Install dependencies
-```bash
-npm install
-```
+Public tables require owner-scoped RLS and explicit grants. Composite foreign keys enforce child/parent ownership. Private auth tables deny direct client access. Login limits, field bounds and row quotas are enforced server-side. Never add permissive `USING (true)` policies to app tables.
 
-### 2. Set up Supabase
-1. Create a free project at [supabase.com](https://supabase.com)
-2. Go to **SQL Editor** and run the contents of `supabase-schema.sql`
-3. Copy your **Project URL** and **anon public key** from Project Settings → API
+## Deployment and maintenance
 
-### 3. Configure environment variables
-Edit `.env.local`:
-```
-VITE_SUPABASE_URL=https://your-project.supabase.co
-VITE_SUPABASE_ANON_KEY=your-anon-key-here
-```
+GitHub Actions verifies dependencies, lint, date tests and builds before Pages deployment. Actions are commit-pinned. Dependency update PRs are scheduled by Dependabot. Branch protections and repository security settings are configured separately in GitHub.
 
-> **Note:** Without these variables, the app works fine using localStorage only (single device).
+The historical embedded password is permanently public in Git history: replace it wherever it was reused. Use unique passwords and enable MFA on GitHub and Supabase provider accounts.
 
-### 4. Run locally
-```bash
-npm run dev
-```
+GitHub Pages cannot provide custom response headers or HttpOnly authentication cookies. Meta CSP, no-referrer and frame refusal reduce exposure but do not replace a dedicated origin with header-based CSP/frame protections and a server-managed session. No security review can guarantee zero weaknesses.
 
-### 5. Deploy to GitHub Pages
-1. Create a GitHub repository named `gym-tracker`
-2. Push this folder to the repo
-3. Run:
-```bash
-npm run deploy
-```
-4. In GitHub repo settings → Pages → set source to `gh-pages` branch
+## Recovery
 
-Your app will be live at `https://YOUR_USERNAME.github.io/gym-tracker/`
-
-> For Supabase env vars on GitHub Pages, add them as **Repository Secrets** and use a GitHub Actions workflow, or simply hardcode them in `.env.local` before building (the anon key is safe to expose publicly).
-
-## Changing the Password
-
-Open `src/App.jsx` and change:
-```js
-const PASSWORD = '200740'
-```
-
-## Data Structure
-
-See `supabase-schema.sql` for the full relational schema. All data is also mirrored to `localStorage` keys:
-- `gym_exercises` — exercise definitions
-- `gym_sessions` — all workout sessions with nested logs and sets
+`npm run backup` exports one authenticated account, checks every table count and aborts on pagination errors. Keep full schema/account/data backups separately; `backups/` is ignored and must never be published. The local full backups made before/after the October 2026 hardening contain sensitive password hashes. The hardened backup was restored into isolated schemas within a rolled-back transaction; all account/workout rows matched production. This is an application restore drill, not a replacement for independent provider-level recovery. Encrypted off-device backups still need a private destination.

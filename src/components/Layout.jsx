@@ -1,9 +1,10 @@
 // src/components/Layout.jsx
 import { useState } from 'react'
 import { Outlet, NavLink } from 'react-router-dom'
-import { House, Dumbbell, CalendarDays, ChartLine, ListChecks, LogOut } from 'lucide-react'
+import { House, Dumbbell, CalendarDays, ChartLine, ListChecks, LogOut, Shield } from 'lucide-react'
 import RestTimer from './RestTimer'
 import ConfirmDialog from './ConfirmDialog'
+import AccountSecurity from './AccountSecurity'
 
 const navItems = [
   { to: '/', icon: House, label: 'Home' },
@@ -15,6 +16,8 @@ const navItems = [
 
 export default function Layout({ onSignOut, username }) {
   const [confirmingSignOut, setConfirmingSignOut] = useState(false)
+  const [securityOpen, setSecurityOpen] = useState(false)
+  const [signOutError, setSignOutError] = useState('')
 
   return (
     <div
@@ -42,6 +45,9 @@ export default function Layout({ onSignOut, username }) {
         <span style={{ flex: 1, fontSize: 'var(--type-fine)', color: 'var(--ink-muted)' }}>
           {username ? `Signed in as ${username}` : ''}
         </span>
+        <button onClick={() => setSecurityOpen(true)} aria-label="Account security" className="btn-icon">
+          <Shield size={17} color="var(--ink-muted)" />
+        </button>
         <button
           onClick={() => setConfirmingSignOut(true)}
           aria-label="Sign out"
@@ -51,6 +57,8 @@ export default function Layout({ onSignOut, username }) {
           <LogOut size={17} color="var(--ink-muted)" />
         </button>
       </header>
+      {signOutError && <p role="alert" style={{ padding: '0 17px', color: 'var(--destructive)' }}>{signOutError}</p>}
+      {securityOpen && <AccountSecurity onClose={() => setSecurityOpen(false)} />}
 
       {/* Page content. This is the scroll container, so the body never scrolls and
           the tab bar can stay fixed without a scroll listener. */}
@@ -112,9 +120,10 @@ export default function Layout({ onSignOut, username }) {
         message="Your data stays synced to your account. You'll need your username and password to get back in."
         confirmLabel="Sign Out"
         onCancel={() => setConfirmingSignOut(false)}
-        onConfirm={() => {
+        onConfirm={async () => {
           setConfirmingSignOut(false)
-          onSignOut?.()
+          setSignOutError('')
+          try { await onSignOut?.() } catch (error) { setSignOutError(error.message) }
         }}
       />
     </div>

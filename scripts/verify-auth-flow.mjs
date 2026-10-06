@@ -137,8 +137,8 @@ const check = (label, ok, detail = '') => {
 
 const snapshot = `JSON.stringify({
   text: (document.body.innerText || '').replace(/\\s+/g, ' ').trim().slice(0, 140),
-  token: localStorage.getItem('gym_token') ? 'present' : 'absent',
-  keys: Object.keys(localStorage).join(' | '),
+  token: sessionStorage.getItem('gym_token') ? 'present' : 'absent',
+  keys: Object.keys(sessionStorage).join(' | '),
   hasSignIn: !!Array.from(document.querySelectorAll('button')).find(b => /sign in/i.test(b.textContent)),
   hasSignOut: !!document.querySelector('[aria-label="Sign out"]')
 })`

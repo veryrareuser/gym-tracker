@@ -40,10 +40,14 @@ export default function App() {
     let cancelled = false
     // The token model has no cross-tab sign-in event, so this runs once per load.
     // It revalidates the stored token against the server rather than trusting
-    // localStorage, since a token can be revoked or expire while still on disk.
+    // sessionStorage, since a token can be revoked or expire between requests.
     restoreSession().then(s => {
       if (cancelled) return
       setSession(s)
+      setReady(true)
+    }).catch(error => {
+      if (cancelled) return
+      setNotice(error.message)
       setReady(true)
     })
     return () => {
@@ -72,7 +76,7 @@ export default function App() {
   }, [session?.userId, endSession])
 
   // Catch a session that dies while the tab is open. Reloading already handles this,
-  // since restoreSession() validates on load — but a tab left open across a 30-day
+  // since restoreSession() validates on load — but a tab left open across a seven-day
   // expiry, or one whose session was revoked in another tab, would otherwise keep
   // rendering empty data. Re-checking on focus is cheap and bounds the damage to
   // however long the tab was in the background.

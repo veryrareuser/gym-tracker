@@ -113,7 +113,7 @@ const evaluate = async expression => {
 
 const snap = `JSON.stringify({
   text: (document.body.innerText || '').replace(/\\s+/g, ' ').trim().slice(0, 220),
-  token: localStorage.getItem('gym_token') ? 'present' : 'absent',
+  token: sessionStorage.getItem('gym_token') ? 'present' : 'absent',
   status: (document.querySelector('[role="status"]')?.innerText || '').trim(),
   alerts: (document.querySelector('[role="alert"]')?.innerText || '').trim()
 })`

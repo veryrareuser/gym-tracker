@@ -78,7 +78,7 @@ export default function LogWorkout() {
       }
 
       // New session — restore a draft before falling back to a blank slate.
-      const raw = localStorage.getItem(draftKey())
+      const raw = sessionStorage.getItem(draftKey())
       if (raw) {
         try {
           const draft = JSON.parse(raw)
@@ -90,7 +90,7 @@ export default function LogWorkout() {
           loadedRef.current = true
           return
         } catch {
-          localStorage.removeItem(draftKey())
+          sessionStorage.removeItem(draftKey())
         }
       }
 
@@ -116,15 +116,15 @@ export default function LogWorkout() {
     const hasContent =
       logs.some(l => l.set_entries.some(s => s.weight || s.reps)) || sessionNotes.trim().length > 0
     if (hasContent) {
-      localStorage.setItem(draftKey(), JSON.stringify({ logs, date, sessionNotes }))
+      sessionStorage.setItem(draftKey(), JSON.stringify({ logs, date, sessionNotes }))
     } else {
-      localStorage.removeItem(draftKey())
+      sessionStorage.removeItem(draftKey())
     }
     setHasDraft(hasContent)
   }, [logs, date, sessionNotes, isEditMode])
 
   function discardDraft() {
-    localStorage.removeItem(draftKey())
+    sessionStorage.removeItem(draftKey())
     setHasDraft(false)
     setDate(todayISO())
     setSessionNotes('')
@@ -215,7 +215,7 @@ export default function LogWorkout() {
     }
     try {
       await saveSession(session)
-      localStorage.removeItem(draftKey())
+      sessionStorage.removeItem(draftKey())
       navigate('/history')
     } catch (err) {
       setSaveError(`Could not save this session: ${err.message}`)

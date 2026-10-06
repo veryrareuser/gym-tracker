@@ -1,4 +1,4 @@
-// Dumps every table to a timestamped JSON file.
+// Exports the four public app tables for ONE authenticated account.
 //
 // Why this exists: the free plan has no automated backups, so a mistaken DELETE is
 // unrecoverable. Run it before any schema or policy change.
@@ -40,7 +40,7 @@ async function resolveToken() {
     console.error('sees zero rows. Provide either:')
     console.error('  $env:SB_TOKEN = "<a session token>"')
     console.error('  $env:SB_USER = "carlo"; $env:SB_PASSWORD = "<password>"')
-    console.error('\nA token from a signed-in session: devtools > Application > Local Storage > gym_token')
+    console.error('\nA token from a signed-in session: devtools > Application > Session Storage > gym_token')
     process.exit(1)
   }
   const password = pass || (await readHidden(`Password for ${user}: `))
@@ -53,10 +53,13 @@ async function resolveToken() {
     console.error(`Sign-in failed (${res.status}). Check the username and password.`)
     process.exit(1)
   }
-  return res.json()
+  const token = await res.json()
+  if (!token) throw new Error('Credentials rejected or attempts throttled')
+  return token
 }
 
 const token = await resolveToken()
+try {
 const headers = { apikey: key, Authorization: `Bearer ${key}`, 'X-Session-Token': token }
 
 async function fetchTable(table, query = '') {
@@ -74,7 +77,7 @@ async function fetchTable(table, query = '') {
   for (;;) {
     const sep = url.includes('?') ? '&' : '?'
     const page = await fetch(`${url}${sep}&offset=${offset}&limit=1000`, { headers })
-    if (!page.ok) break
+    if (!page.ok) throw new Error(`${table} pagination failed (${page.status}); refusing a partial backup`)
     const batch = await page.json()
     if (batch.length === 0) break
     collected.push(...batch)
@@ -91,7 +94,7 @@ const counts = {}
 
 const targets = [
   ['exercises', '?select=*&order=id'],
-  ['workout_sessions', '?select=*&order=date'],
+  ['workout_sessions', '?select=*&order=date,id'],
   ['exercise_logs', '?select=*&order=id'],
   ['set_entries', '?select=*&order=id'],
 ]
@@ -117,7 +120,7 @@ if (allEmpty) {
   console.error('session token rather than an empty database, and RLS returns zero rows')
   console.error('instead of an error — so this would look like a clean run.')
   console.error('Refusing to write a backup file. Check the token, then retry.')
-  process.exit(1)
+  throw new Error('Empty export refused')
 }
 
 const partial = Object.entries(counts).filter(([, n]) => n === 0).map(([t]) => t)
@@ -127,17 +130,26 @@ if (partial.length > 0) {
 
 const backup = {
   taken_at: new Date().toISOString(),
-  note: 'Full dump of the public schema, one signed-in account. Restore with the id fields preserved.',
+  note: 'Per-account export of four public app tables; not a full database backup. Restore with id fields preserved.',
   row_counts: counts,
   tables: {},
 }
 
-for (const [table, query] of targets) {
-  if (failures > 0 && counts[table] === null) {
-    backup.tables[table] = { error: 'fetch failed' }
-    continue
+if (failures > 0) throw new Error('Backup is incomplete; no file written')
+for (const [table, query] of targets) backup.tables[table] = await fetchTable(table, query)
+
+// Verify every table before writing. This is a per-account export; full disaster
+// recovery uses a privileged schema+all-account dump, not this REST export.
+for (const [table] of targets) {
+  const live = await fetch(`${base}/rest/v1/${table}?select=id`, {
+    headers: { ...headers, Prefer: 'count=exact', Range: '0-0' },
+  })
+  if (!live.ok) throw new Error(`Could not verify ${table}; no file written`)
+  const range = live.headers.get('content-range') || ''
+  const total = Number(range.split('/')[1])
+  if (!Number.isFinite(total) || total !== backup.tables[table].length || total !== counts[table]) {
+    throw new Error(`${table} changed or was truncated; rerun the backup`)
   }
-  backup.tables[table] = await fetchTable(table, query)
 }
 
 mkdirSync(outDir, { recursive: true })
@@ -148,18 +160,13 @@ const bytes = JSON.stringify(backup).length
 console.log(`\nWrote ${file}`)
 console.log(`Size: ${(bytes / 1024).toFixed(1)} KB`)
 
-if (failures > 0) {
-  console.error(`\n${failures} table(s) failed. This backup is NOT complete.`)
-  process.exit(1)
+console.log('\nAll four exported table counts verified. This export covers one account only.')
+} finally {
+  if (!process.env.SB_TOKEN) {
+    const response = await fetch(`${base}/rest/v1/rpc/logout`, {
+      method: 'POST', headers: {apikey: key, Authorization: `Bearer ${key}`, 'Content-Type': 'application/json'},
+      body: JSON.stringify({p_token: token}), signal: AbortSignal.timeout(15000),
+    }).catch(() => null)
+    if (!response?.ok) console.error('Could not revoke the backup session; use Account security to revoke other sessions.')
+  }
 }
-
-// Cross-check the dump against the live count, so a truncated write is caught. The
-// count query is scoped by RLS to the same account, so the two are comparable.
-const live = await fetch(`${base}/rest/v1/exercise_logs?select=id`, {
-  headers: { ...headers, Prefer: 'count=exact', Range: '0-0' },
-})
-const contentRange = live.headers.get('content-range') || ''
-const total = Number(contentRange.split('/')[1] || 0)
-const dumped = backup.tables.exercise_logs?.length ?? 0
-console.log(`\nCross-check: exercise_logs live=${total} dumped=${dumped} ${total === dumped ? 'MATCH' : 'MISMATCH'}`)
-if (total !== dumped) process.exit(1)

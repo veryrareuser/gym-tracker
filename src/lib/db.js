@@ -1,12 +1,12 @@
 // src/lib/db.js
-// Abstraction layer: reads/writes localStorage, syncs to Supabase when available.
+// Abstraction layer: reads/writes sessionStorage, syncs to Supabase when available.
 import { supabase } from './supabaseClient'
 import { imageUrl, DEFAULT_EXERCISE_IMAGE_MAP } from './exerciseDb'
 import { currentUserId } from './auth'
 
 /*
  * Local cache keys are namespaced per user id. Without this, two people sharing a
- * device would read each other's cached sessions straight out of localStorage,
+ * device would read each other's cached sessions straight out of sessionStorage,
  * bypassing RLS entirely. The keys that used to be unprefixed are read once as a
  * legacy fallback and then dropped, since the cloud copy is authoritative.
  *
@@ -26,14 +26,14 @@ const CACHE_BASES = ['exercises', 'sessions', 'gym_draft']
 
 /**
  * Drop a user's cached rows. Called on sign-out: namespacing already stops the next
- * person *using* this data, but without this it would sit in localStorage on a shared
+ * person *using* this data, but without this it would sit in sessionStorage on a shared
  * device until that same account signed back in. Takes the id explicitly, because
  * sign-out clears the in-memory user before a caller could ask for it.
  */
 export function clearLocalCache(userId) {
   if (!userId) return
   try {
-    for (const base of CACHE_BASES) localStorage.removeItem(cacheKey(base, userId))
+    for (const base of CACHE_BASES) sessionStorage.removeItem(cacheKey(base, userId))
   } catch {
     /* storage unavailable, or a private-mode browser refusing writes */
   }
@@ -43,19 +43,19 @@ export function clearLocalCache(userId) {
 function localGet(base) {
   const key = cacheKey(base, currentUserId())
   try {
-    const raw = localStorage.getItem(key)
+    const raw = sessionStorage.getItem(key)
     if (raw) return JSON.parse(raw) || []
   } catch {
     return []
   }
   // Signed in, but this user has no cache yet and an unprefixed key exists. Adopt
   // it once, then remove it so it cannot leak to the next person on this device.
-  const legacy = localStorage.getItem(base)
+  const legacy = sessionStorage.getItem(base)
   if (legacy) {
-    localStorage.removeItem(base)
+    sessionStorage.removeItem(base)
     try {
       const parsed = JSON.parse(legacy) || []
-      localStorage.setItem(key, JSON.stringify(parsed))
+      sessionStorage.setItem(key, JSON.stringify(parsed))
       return parsed
     } catch {
       return []
@@ -65,12 +65,12 @@ function localGet(base) {
 }
 
 function localSet(base, value) {
-  localStorage.setItem(cacheKey(base, currentUserId()), JSON.stringify(value))
+  sessionStorage.setItem(cacheKey(base, currentUserId()), JSON.stringify(value))
 }
 
 /** Called on sign-out so the next person on the device starts from a clean slate. */
 export function purgeUnscopedCaches() {
-  for (const key of LEGACY_KEYS) localStorage.removeItem(key)
+  for (const key of LEGACY_KEYS) sessionStorage.removeItem(key)
 }
 
 /**
@@ -357,7 +357,7 @@ export async function deleteSession(id) {
   localSet('sessions', localGet('sessions').filter(s => s.id !== id))
 }
 
-/* ─── Sync from Supabase to localStorage (call on app init when online) ─── */
+/* ─── Sync from Supabase to sessionStorage (call on app init when online) ─── */
 export async function syncFromCloud() {
   if (!supabase) return
   await getExercises()

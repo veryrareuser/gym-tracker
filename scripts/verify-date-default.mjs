@@ -164,7 +164,7 @@ try {
   check('and is labelled Today again', d.badge === 'Today', d.badge)
 
   console.log('\n3. merely opening Log must not leave a draft behind')
-  const stored = await ev(`Object.keys(localStorage).filter(k => k.includes('draft')).join(',') || '(none)'`)
+  const stored = await ev(`Object.keys(sessionStorage).filter(k => k.includes('draft')).join(',') || '(none)'`)
   check('no draft is written by opening the page', stored === '(none)', stored)
 
   console.log('\n4. a draft that does carry a real date says which one')
@@ -185,7 +185,7 @@ try {
   // whole round of debugging before the chip was confirmed working.
   check('the draft chip names its date', /\b(jan|feb|mar|apr|may|jun|jul|aug|sept?|oct|nov|dec)\b/i.test(chip || ''), JSON.stringify(chip))
   check('it is not a bare "Discard"', !/^discard$/i.test((chip || '').trim()), JSON.stringify(chip))
-  check('a draft was stored once the set had content', (await ev(`Object.keys(localStorage).filter(k => k.includes('draft')).length`)) === 1)
+  check('a draft was stored once the set had content', (await ev(`Object.keys(sessionStorage).filter(k => k.includes('draft')).length`)) === 1)
 } finally {
   ws.close()
   chrome.kill()

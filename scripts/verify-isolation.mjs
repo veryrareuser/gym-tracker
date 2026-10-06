@@ -52,19 +52,22 @@ const client = token =>
 
 async function signIn(who, label) {
   const { data, error } = await client(null).rpc('login', { p_username: who.user, p_password: who.pass })
-  if (error) {
-    console.error(`Could not sign in as ${label} (${who.user}): ${error.message}`)
-    process.exit(1)
+  if (error || !data) {
+    throw new Error(`Could not sign in as ${label}: ${error?.message || 'Credentials rejected or attempts throttled'}`)
   }
   console.log(`  ${label} = ${who.user}`)
-  return client(data)
+  const signedIn = client(data)
+  signedIn.auditToken = data
+  return signedIn
 }
 
 const stamp = Date.now().toString().slice(-9)
 const IDS = { session: `zzsess${stamp}`, log: `zzlog${stamp}`, set: `zzset${stamp}`, exercise: `zzorder${stamp}` }
 
-const tokenA = await signIn(A, 'A')
-const tokenB = await signIn(B, 'B')
+let tokenA, tokenB, me, meB
+try {
+tokenA = await signIn(A, 'A')
+tokenB = await signIn(B, 'B')
 console.log('')
 
 // Ownership is no longer implicit. `user_id` is NOT NULL and every policy's
@@ -72,22 +75,19 @@ console.log('')
 // rejected by RLS. The old version of this test omitted it, which is a third reason it
 // could never have passed even with a working invite. db.js does the same thing via
 // requireUserId() at save time.
-const me = await tokenA.rpc('whoami')
+me = await tokenA.rpc('whoami')
 const idA = (Array.isArray(me.data) ? me.data[0] : me.data)?.user_id
 if (!idA) {
-  console.error('Could not resolve A\'s account id from whoami().')
-  process.exit(1)
+  throw new Error('Could not resolve A account id from whoami().')
 }
-const meB = await tokenB.rpc('whoami')
+meB = await tokenB.rpc('whoami')
 const idB = (Array.isArray(meB.data) ? meB.data[0] : meB.data)?.user_id
 if (!idB) {
-  console.error('Could not resolve B\'s account id from whoami().')
-  process.exit(1)
+  throw new Error('Could not resolve B account id from whoami().')
 }
 console.log(`  A's account id: ${idA}`)
 console.log(`  B's account id: ${idB}\n`)
 
-try {
   // A crashed earlier run would otherwise leave rows that make a later run's counts
   // wrong, or make a "B cannot see A's row" check pass for the wrong reason.
   for (const [table, id] of [
@@ -224,12 +224,11 @@ try {
   const restored = await tokenA.rpc('set_profile_visible', { p_visible: true })
   check('A can opt back in', restored.data === true, `returned ${restored.data}`)
 } finally {
-  // Both accounts are left sharing their profile. The visibility assertions above toggle
-  // it, and a run that failed midway must not leave a real person hidden from their
-  // friend's leaderboard.
-  for (const [label, tok] of [['A', tokenA], ['B', tokenB]]) {
-    const back = await tok.rpc('set_profile_visible', { p_visible: true })
-    check(`${label} left sharing their profile`, back.data === true, `returned ${back.data}`)
+  // Restore each account's original consent, including when a check fails midway.
+  for (const [label, tok, original] of [['A', tokenA, me?.data?.[0]?.profile_visible], ['B', tokenB, meB?.data?.[0]?.profile_visible]]) {
+    if (!tok || typeof original !== 'boolean') continue
+    const back = await tok.rpc('set_profile_visible', { p_visible: original })
+    check(`${label} visibility restored`, back.data === original, `returned ${back.data}`)
   }
 
   console.log('\ncleanup')
@@ -242,12 +241,14 @@ try {
     ['workout_sessions', IDS.session],
     ['exercises', IDS.exercise],
   ]) {
+    if (!tokenA) continue
     const r = await tokenA.from(table).delete().eq('id', id).select('id')
     check(`removed ${table} ${id}`, (r.data?.length ?? 0) <= 1, `${r.data?.length} removed`)
   }
   // Confirm nothing survived, including a partially-failed run from before.
-  const left = await tokenA.from('workout_sessions').select('id').like('id', `zzsess${stamp}`)
+  const left = tokenA ? await tokenA.from('workout_sessions').select('id').like('id', `zzsess${stamp}`) : {data: []}
   check('no rows left behind', (left.data?.length ?? 0) === 0, `${left.data?.length} rows`)
+  for (const tok of [tokenA, tokenB]) if (tok) await tok.rpc('logout', { p_token: tok.auditToken })
 }
 
 console.log(failures === 0 ? '\nAll checks passed.' : `\n${failures} check(s) FAILED.`)
