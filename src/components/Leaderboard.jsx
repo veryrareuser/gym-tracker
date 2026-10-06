@@ -131,7 +131,17 @@ export default function Leaderboard({ username }) {
     )
   }
 
-  const colHead = { fontSize: 'var(--type-min)', color: 'var(--ink-muted)', textAlign: 'right', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }
+  const leaderboardGrid = 'minmax(0, 1fr) 64px 68px 48px'
+  const colHead = {
+    fontSize: 'var(--type-fine)',
+    lineHeight: 1,
+    color: 'var(--ink-muted)',
+    textAlign: 'right',
+    fontWeight: 600,
+    textTransform: 'uppercase',
+    letterSpacing: '0.04em',
+    whiteSpace: 'nowrap',
+  }
   const month = monthLabel()
 
   return (
@@ -148,7 +158,7 @@ export default function Leaderboard({ username }) {
         </p>
       ) : (
         <>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 68px 64px 48px', gap: 8, paddingBottom: 8, borderBottom: '1px solid var(--line)' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: leaderboardGrid, gap: 8, paddingBottom: 8, borderBottom: '1px solid var(--line)' }}>
             <div style={colHead} />
             <div style={colHead}>{month}</div>
             <div style={colHead}>Best ever</div>
@@ -180,7 +190,7 @@ export default function Leaderboard({ username }) {
                   }
                   style={{
                     display: 'grid',
-                    gridTemplateColumns: '1fr 68px 64px 48px',
+                    gridTemplateColumns: leaderboardGrid,
                     gap: 8,
                     alignItems: 'center',
                     padding: '12px 8px',
