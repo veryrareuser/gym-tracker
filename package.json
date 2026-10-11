@@ -20,6 +20,7 @@
     "verify:dates": "node scripts/lib/date-helpers.test.mjs",
     "verify:storage": "node scripts/lib/browser-session.test.mjs",
     "verify:render": "node scripts/lib/render-components.test.mjs",
+    "verify:geometry": "node scripts/lib/body-geometry.test.mjs",
     "verify:date-default": "node scripts/verify-date-default.mjs"
   },
   "dependencies": {

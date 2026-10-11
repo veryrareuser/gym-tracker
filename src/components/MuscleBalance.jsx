@@ -3,7 +3,7 @@ import { useMemo, useState } from 'react'
 import { Dumbbell, ChevronLeft, ChevronRight } from 'lucide-react'
 import { REGIONS, REGION_LABEL, regionsFor } from '../lib/muscles'
 import { localISODate, weekStartISO } from '../lib/utils'
-import BodyMap, { BodyMapLegend } from './BodyMap'
+import BodyMap from './BodyMap'
 
 /**
  * How the training in a period was distributed across muscle regions.
@@ -186,8 +186,12 @@ export default function MuscleBalance({ sessions, exercises }) {
         <>
           <BodyMap totals={totals} />
 
-          <div style={{ display: 'flex', justifyContent: 'center', marginTop: 12 }}>
-            <BodyMapLegend />
+          <div className="hm-legend" style={{ justifyContent: 'center' }}>
+            Less
+            {[0, 1, 2, 3, 4].map(i => (
+              <div key={i} className={`bm-m l${i}`} style={{ width: 10, height: 10, borderRadius: 3 }} />
+            ))}
+            More
           </div>
 
           {/* Ranked regions */}

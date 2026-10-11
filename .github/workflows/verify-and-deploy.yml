@@ -27,6 +27,7 @@ jobs:
       - run: npm run verify:dates
       - run: npm run verify:storage
       - run: npm run verify:render
+      - run: npm run verify:geometry
       - run: npm run build
       - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
