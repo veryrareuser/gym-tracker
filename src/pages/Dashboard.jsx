@@ -19,10 +19,12 @@ export default function Dashboard() {
   const lastSession = sessions[0]
   const loggedToday = lastSession?.date === todayISO()
 
+  const streak = weekStreak(sessions)
+
   const stats = [
     {
       label: 'Streak',
-      value: weekStreak(sessions),
+      value: streak,
       unit: streak === 1 ? 'week' : 'weeks',
       icon: Flame,
       color: 'var(--ink)',
