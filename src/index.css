@@ -466,3 +466,47 @@ button:disabled {
   background: var(--line-control);
   border-radius: 3px;
 }
+
+/* ---- Activity heatmap and body map ----------------------------------------
+ *
+ * Geometry and shading copied from openGym (DuarteSantos8/openGym), which solved the
+ * same problem: one accent ramp that means "more training" in both the heatmap and the
+ * body map, rather than two unrelated colour scales.
+ *
+ * The shade steps are colour-mixed against a base surface instead of hardcoded hex, so the
+ * ramp follows the light/dark theme automatically. Levels are 0-4, not 0-5: five steps
+ * across this much area reads as noise.
+ */
+.hm-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; padding-bottom: 2px }
+.hm-wrap::-webkit-scrollbar { display: none }
+.hm-months { display: flex; gap: 3px; margin-bottom: 3px; font-size: var(--type-fine); color: var(--ink-muted); height: 14px }
+.hm-months span { width: 11px; flex: none; white-space: nowrap }
+.hm-body { display: flex; gap: 6px }
+.hm-days { display: flex; flex-direction: column; gap: 3px; font-size: 9px; color: var(--ink-muted); width: 24px }
+.hm-days span { height: 11px; line-height: 11px; white-space: nowrap }
+.hm-grid { display: flex; gap: 3px }
+.hm-col { display: flex; flex-direction: column; gap: 3px }
+.hm-c { width: 11px; height: 11px; border-radius: 3px; background: var(--fill); flex: none }
+.hm-c.l1 { background: color-mix(in srgb, var(--primary) 30%, var(--fill)) }
+.hm-c.l2 { background: color-mix(in srgb, var(--primary) 55%, var(--fill)) }
+.hm-c.l3 { background: color-mix(in srgb, var(--primary) 78%, var(--fill)) }
+.hm-c.l4 { background: var(--primary) }
+/* An untrained today is the same neutral as every other empty day, so it needs an
+   outline rather than a fill to be findable at all. */
+.hm-c.today { box-shadow: 0 0 0 1.5px var(--primary) }
+.hm-c.future { opacity: .3 }
+.hm-legend { display: flex; align-items: center; gap: 4px; font-size: var(--type-fine); color: var(--ink-muted); margin-top: 10px }
+.hm-legend .hm-c { width: 10px; height: 10px }
+
+/* Body map. max-height is what keeps the figure from dominating a phone screen. */
+.bodymap { display: flex; gap: 10px; justify-content: center; align-items: flex-start }
+.bm-v { flex: 1; min-width: 0; height: auto; max-height: min(46vh, 340px) }
+.bm-sil { fill: color-mix(in srgb, var(--ink) 18%, var(--surface)) }
+.bm-m { fill: var(--fill); transition: fill 200ms ease }
+.bm-m.l1 { fill: color-mix(in srgb, var(--primary) 32%, var(--fill)) }
+.bm-m.l2 { fill: color-mix(in srgb, var(--primary) 56%, var(--fill)) }
+.bm-m.l3 { fill: color-mix(in srgb, var(--primary) 78%, var(--fill)) }
+.bm-m.l4 { fill: var(--primary) }
+/* Stroke in the surface colour rather than a darker outline: it reads as a gap between
+   muscles instead of a drawn border, which is what makes the silhouette legible. */
+.bm-v path { stroke: var(--surface); stroke-width: 2.5; stroke-linejoin: round }
