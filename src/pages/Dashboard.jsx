@@ -9,6 +9,10 @@ import { weekStreak } from '../lib/stats'
 export default function Dashboard() {
   const [sessions, setSessions] = useState([])
   const [exercises, setExercises] = useState([])
+  // Captured once, on mount. Reading the clock during render is an impurity: the value
+  // would change on every re-render, and React is free to re-render at any time, so the
+  // greeting could disagree with the "logged today" check computed further down.
+  const [today] = useState(() => new Date())
   const navigate = useNavigate()
 
   useEffect(() => {
@@ -43,7 +47,7 @@ export default function Dashboard() {
     <div className="screen">
       <header style={{ paddingTop: 'calc(env(safe-area-inset-top) + 20px)', paddingBottom: 20 }}>
         <p style={{ color: 'var(--ink-muted)', fontSize: 'var(--type-subhead)', margin: '0 0 2px' }}>
-          {new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}
+          {today.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}
         </p>
         <h1 className="screen-title">{loggedToday ? 'Session logged' : 'Ready to train?'}</h1>
       </header>

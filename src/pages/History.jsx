@@ -63,7 +63,9 @@ export default function History() {
   const [pendingDelete, setPendingDelete] = useState(null)
   const navigate = useNavigate()
 
-  const now = new Date()
+  // Captured once on mount: the calendar opens on the month the user is looking at, and a
+  // clock read during render would be an impurity React can invalidate on any re-render.
+  const [now] = useState(() => new Date())
   const [calYear, setCalYear] = useState(now.getFullYear())
   const [calMonth, setCalMonth] = useState(now.getMonth())
 
