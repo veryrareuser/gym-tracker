@@ -13,7 +13,35 @@ import ExercisePicker from '../components/ExercisePicker'
 // in-progress workout belongs to whoever is typing it, and on a shared device an
 // unprefixed key would hand your half-finished session to the next person.
 const draftKey = () => `gym_draft:${currentUserId() ?? 'anon'}`
+// Mirror of the draft in localStorage, which survives closing the browser window.
+//
+// sessionStorage dies with the tab, and the token lives there too — so closing the
+// browser mid-workout used to take the draft with it and the sets were simply gone.
+// This holds nothing but the form's own state (exercises, sets, date, notes); no
+// credentials. The name deliberately matches the gym_draft pattern in browserSession
+// so sign-out and the legacy sweep clear it too, instead of stranding it on a shared
+// device. Local-first restore is in `load()` below.
+const draftBackupKey = () => `gym_draft:backup:${currentUserId() ?? 'anon'}`
 const REST_OPTIONS = [60, 90, 120, 180]
+
+// The mirror is best-effort. localStorage throws outright in some restricted
+// browsing modes, and an unguarded throw here would take the sessionStorage draft
+// down with it — losing the protection that already worked. A missing mirror means
+// the next warning prompt instead; never a lost workout.
+function mirrorDraft(op, payload) {
+  try {
+    if (op === 'set') localStorage.setItem(draftBackupKey(), payload)
+    else localStorage.removeItem(draftBackupKey())
+  } catch { /* Restricted browser storage. */ }
+}
+
+function readDraft() {
+  try {
+    return sessionStorage.getItem(draftKey()) || localStorage.getItem(draftBackupKey())
+  } catch {
+    return null
+  }
+}
 
 function emptySet(n) {
   return { id: generateId(), set_number: n, weight: '', reps: '', note: '' }
@@ -78,7 +106,13 @@ export default function LogWorkout() {
       }
 
       // New session — restore a draft before falling back to a blank slate.
-      const raw = sessionStorage.getItem(draftKey())
+      //
+      // sessionStorage is the primary copy and the localStorage mirror is the
+      // fallback, so a draft written before the window was closed is still here on
+      // the next visit. The mirror is deliberately left in place on restore: the
+      // autosave effect below rewrites both stores on the next tick, and it is only
+      // cleared by saving, discarding, or the draft emptying out.
+      const raw = readDraft()
       if (raw) {
         try {
           const draft = JSON.parse(raw)
@@ -91,6 +125,7 @@ export default function LogWorkout() {
           return
         } catch {
           sessionStorage.removeItem(draftKey())
+          mirrorDraft('clear')
         }
       }
 
@@ -116,15 +151,36 @@ export default function LogWorkout() {
     const hasContent =
       logs.some(l => l.set_entries.some(s => s.weight || s.reps)) || sessionNotes.trim().length > 0
     if (hasContent) {
-      sessionStorage.setItem(draftKey(), JSON.stringify({ logs, date, sessionNotes }))
+      const payload = JSON.stringify({ logs, date, sessionNotes })
+      sessionStorage.setItem(draftKey(), payload)
+      mirrorDraft('set', payload)
     } else {
       sessionStorage.removeItem(draftKey())
+      mirrorDraft('clear')
     }
     setHasDraft(hasContent)
   }, [logs, date, sessionNotes, isEditMode])
 
+  // Warn before the window closes or reloads with an unsaved workout.
+  //
+  // The draft survives a closed window now, so this is no longer the last line of
+  // defence — it is the first. A prompt the user can dismiss is better than a silent
+  // reload they never asked for, and this covers the cases localStorage cannot: a
+  // browser kill, a crash, a laptop lid, or switching away mid-set.
+  useEffect(() => {
+    if (!loadedRef.current || isEditMode || !hasDraft) return
+    const warn = e => {
+      e.preventDefault()
+      // Chrome requires returnValue to be set; the string it shows is now ignored.
+      e.returnValue = ''
+    }
+    window.addEventListener('beforeunload', warn)
+    return () => window.removeEventListener('beforeunload', warn)
+  }, [hasDraft, isEditMode])
+
   function discardDraft() {
     sessionStorage.removeItem(draftKey())
+    mirrorDraft('clear')
     setHasDraft(false)
     setDate(todayISO())
     setSessionNotes('')
@@ -216,6 +272,7 @@ export default function LogWorkout() {
     try {
       await saveSession(session)
       sessionStorage.removeItem(draftKey())
+      mirrorDraft('clear')
       navigate('/history')
     } catch (err) {
       setSaveError(`Could not save this session: ${err.message}`)
