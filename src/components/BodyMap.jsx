@@ -58,9 +58,10 @@ function Region({ name, value, max, side }) {
       data-region={name}
       data-side={shape.side || side}
     >
-      <title>
-        {REGION_LABEL[name]}: {Math.round(value)} set{Math.round(value) === 1 ? '' : 's'}
-      </title>
+      {/* One interpolated string, not several children: React requires the children of a
+          <title> element to be a single string, and an array here is a fatal render error
+          rather than a warning — it took the whole page down. */}
+      <title>{`${REGION_LABEL[name]}: ${Math.round(value)} set${Math.round(value) === 1 ? '' : 's'}`}</title>
     </path>
   )
 }
