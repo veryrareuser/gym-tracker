@@ -49,6 +49,37 @@ export function monthLabel(d = new Date()) {
   return d.toLocaleDateString('en-GB', { month: 'long' })
 }
 
+/**
+ * First day of the device's current week (Monday), as YYYY-MM-DD.
+ *
+ * Weeks start on Monday, following ISO 8601. Built from the local getters for the same
+ * reason as localISODate above: a week boundary derived from the UTC date lands on the
+ * wrong week for anyone east of UTC during the first hours of Monday, which would
+ * silently drop the newest session out of the streak.
+ *
+ * The `new Date(y, m, d)` form is deliberate. It pins local midnight rather than parsing
+ * an ISO string, which JavaScript would read as UTC.
+ */
+export function weekStartISO(d = new Date()) {
+  const start = new Date(d.getFullYear(), d.getMonth(), d.getDate())
+  // getDay() is 0=Sunday; shift so Monday is 0, then step back to it.
+  const offset = (start.getDay() + 6) % 7
+  start.setDate(start.getDate() - offset)
+  return localISODate(start)
+}
+
+/**
+ * Week start for a stored session date.
+ *
+ * A session date is a plain calendar day, so it is anchored to local midnight. Passing it
+ * to `new Date()` directly would parse it as UTC midnight and — west of UTC — hand back
+ * the previous day, putting Sunday's workout in the week that ended on Saturday.
+ */
+export function weekStartOfSession(isoDate) {
+  if (!isoDate) return null
+  return weekStartISO(new Date(`${isoDate}T00:00:00`))
+}
+
 export function calcVolume(session) {
   return (session.exercise_logs || []).reduce((total, log) => {
     return total + (log.set_entries || []).reduce((s, set) => {

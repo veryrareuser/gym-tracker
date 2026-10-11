@@ -16,7 +16,7 @@
 
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
-import { localISODate, monthStartISO, monthLabel } from '../../src/lib/utils.js'
+import { localISODate, monthStartISO, monthLabel, weekStartISO, weekStartOfSession } from '../../src/lib/utils.js'
 
 const ZONES = ['Asia/Jakarta', 'America/New_York', 'Europe/London', 'Pacific/Auckland', 'UTC']
 
@@ -114,6 +114,58 @@ if (process.argv.includes('--child')) {
     INSTANTS.every(iso => monthStartISO(new Date(iso)).endsWith('-01')),
   )
   check('monthLabel returns a real month name', /^[A-Z][a-z]+$/.test(monthLabel(new Date('2026-09-15T12:00:00Z'))), monthLabel(new Date('2026-09-15T12:00:00Z')))
+
+  // Weekly streaks replaced the daily one, and week maths fails the same way month maths
+  // does: derive it from the wrong clock and a Monday-morning workout lands in the week
+  // that ended on Sunday, so the streak reads one short exactly when it was just earned.
+  // getDay() is 0=Sunday, so Monday is 1. Built from the returned string so the check
+  // is about the value the caller gets, not about the Date it was derived from.
+  const isMonday = iso => new Date(`${weekStartISO(new Date(iso))}T00:00:00`).getDay() === 1
+  check('weekStartISO is always a Monday', INSTANTS.every(iso => isMonday(iso)), `${INSTANTS.length} checked`)
+
+  // Cross-checked through Intl rather than against itself, same as localISODate above.
+  let weekMismatches = 0
+  for (const iso of INSTANTS) {
+    const d = new Date(iso)
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: zone, year: 'numeric', month: '2-digit', day: '2-digit', weekday: 'short',
+    }).formatToParts(d)
+    const get = t => parts.find(p => p.type === t).value
+    // Step back from the local calendar date to its Monday, in whole days.
+    const localNoon = new Date(`${expectedIn(zone, d)}T12:00:00`)
+    const want = localNoon
+    const offset = (want.getDay() + 6) % 7
+    want.setDate(want.getDate() - offset)
+    if (weekStartISO(d) !== localISODate(want)) {
+      weekMismatches++
+      console.log(`    ${iso}: got ${weekStartISO(d)}, expected ${localISODate(want)} (${get('weekday')})`)
+    }
+  }
+  check('weekStartISO agrees with the zone in Intl', weekMismatches === 0)
+
+  // A stored session date is a plain calendar day. new Date('2026-09-30') parses as UTC
+  // midnight, which west of UTC is still the 29th — putting a Sunday workout in the week
+  // that ended on Saturday. Every day of an ISO week must map to that week's Monday.
+  const SESSION_DATES = [
+    '2026-09-28', // Monday
+    '2026-09-30', // Wednesday
+    '2026-10-03', // Saturday
+    '2026-10-04', // Sunday — the one a UTC parse would file under Saturday
+    '2026-01-01', // a Thursday, in a different month and year
+  ]
+  const sessionOk = SESSION_DATES.every(iso => {
+    const expected = new Date(`${iso}T00:00:00`)
+    const offset = (expected.getDay() + 6) % 7
+    expected.setDate(expected.getDate() - offset)
+    return weekStartOfSession(iso) === localISODate(expected)
+  })
+  check('weekStartOfSession maps a calendar day to its own week', sessionOk, `${SESSION_DATES.length} dates`)
+  check(
+    '  and Sunday does not slip into the previous week',
+    weekStartOfSession('2026-10-04') === '2026-09-28',
+    `${weekStartOfSession('2026-10-04')} (Sunday)`,
+  )
+  check('weekStartOfSession handles a missing date', weekStartOfSession(null) === null)
 
   // The exact scenario that was reported: 01:30 local in Jakarta, where UTC said the 27th.
   if (zone === 'Asia/Jakarta') {
