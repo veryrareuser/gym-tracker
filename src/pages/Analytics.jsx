@@ -1,5 +1,6 @@
 // src/pages/Analytics.jsx
 import { useEffect, useState, useMemo } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { TrendingUp, Zap, ChevronDown } from 'lucide-react'
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -11,6 +12,9 @@ import { useColorScheme, useChartTheme, CHART_COLORS, ChartThemeContext } from '
 import { currentUsername } from '../lib/auth'
 import Leaderboard from '../components/Leaderboard'
 import PersonalRecords from '../components/PersonalRecords'
+import StatCards from '../components/StatCards'
+import ActivityHeatmap from '../components/ActivityHeatmap'
+import MuscleBalance from '../components/MuscleBalance'
 
 /** Declared at module scope so it is not remounted on every render. */
 function ChartTooltip({ active, payload, label, unit }) {
@@ -41,6 +45,7 @@ export default function Analytics() {
   const [sessions, setSessions] = useState([])
   const [exercises, setExercises] = useState([])
   const [selectedExercise, setSelectedExercise] = useState('')
+  const navigate = useNavigate()
   const scheme = useColorScheme()
   const c = CHART_COLORS[scheme]
   const username = currentUsername()
@@ -103,9 +108,19 @@ export default function Analytics() {
   return (
     <ChartThemeContext.Provider value={c}>
       <div className="screen">
-      <h1 className="screen-title" style={{ paddingTop: 'calc(env(safe-area-inset-top) + 20px)', marginBottom: 20 }}>
-        Progress
-      </h1>
+      <header style={{ display: 'flex', alignItems: 'flex-start', gap: 12, paddingTop: 'calc(env(safe-area-inset-top) + 20px)', marginBottom: 20 }}>
+        <div style={{ flex: 1 }}>
+          <h1 className="screen-title" style={{ margin: 0 }}>
+            Stats
+          </h1>
+          <p style={{ color: 'var(--ink-muted)', fontSize: 'var(--type-subhead)', margin: '2px 0 0' }}>
+            Progress &amp; history
+          </p>
+        </div>
+        <button onClick={() => navigate('/history')} className="btn-secondary" style={{ minHeight: 36, flexShrink: 0 }}>
+          History
+        </button>
+      </header>
 
       {sessions.length === 0 && (
         <div className="card" style={{ padding: '48px 24px', textAlign: 'center' }}>
@@ -118,6 +133,12 @@ export default function Analytics() {
 
       {sessions.length > 0 && (
         <>
+          <StatCards sessions={sessions} />
+
+          <ActivityHeatmap sessions={sessions} />
+
+          <MuscleBalance sessions={sessions} exercises={exercises} />
+
           <section className="card" style={{ padding: 17, marginBottom: 8 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
               <TrendingUp size={18} color={c.series} />

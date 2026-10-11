@@ -3,7 +3,8 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Dumbbell, Flame, TrendingUp, ChevronRight, Plus } from 'lucide-react'
 import { getSessions, getExercises } from '../lib/db'
-import { formatDate, calcVolume, todayISO, weekStartISO, weekStartOfSession } from '../lib/utils'
+import { formatDate, calcVolume, todayISO } from '../lib/utils'
+import { weekStreak } from '../lib/stats'
 
 export default function Dashboard() {
   const [sessions, setSessions] = useState([])
@@ -18,43 +19,10 @@ export default function Dashboard() {
   const lastSession = sessions[0]
   const loggedToday = lastSession?.date === todayISO()
 
-  // Consecutive weeks with at least one session, counting back from this week or last.
-  //
-  // Weeks rather than days, because nobody trains every day: a daily streak resets on
-  // every rest day, which meant the number was almost always zero for anyone on a normal
-  // 3-4x schedule. A week counts if anything was logged in it, and the current week is
-  // not penalised until it has actually passed.
-  //
-  // Every step goes through weekStartISO, so the whole walk stays on the device clock —
-  // see the UTC note on localISODate in utils.js. Comparing raw date strings here would
-  // silently truncate the streak around Monday midnight.
-  function calcStreak() {
-    if (sessions.length === 0) return 0
-    const weeks = new Set(sessions.map(s => weekStartOfSession(s.date)).filter(Boolean))
-    if (weeks.size === 0) return 0
-    let cursor = weekStartISO()
-    // This week not being trained yet should not break last week's streak.
-    if (!weeks.has(cursor)) {
-      const lastWeek = new Date()
-      lastWeek.setDate(lastWeek.getDate() - 7)
-      cursor = weekStartISO(lastWeek)
-    }
-    let streak = 0
-    while (weeks.has(cursor)) {
-      streak++
-      const prev = new Date(`${cursor}T00:00:00`)
-      prev.setDate(prev.getDate() - 7)
-      cursor = weekStartISO(prev)
-    }
-    return streak
-  }
-
-  const streak = calcStreak()
-
   const stats = [
     {
       label: 'Streak',
-      value: streak,
+      value: weekStreak(sessions),
       unit: streak === 1 ? 'week' : 'weeks',
       icon: Flame,
       color: 'var(--ink)',
