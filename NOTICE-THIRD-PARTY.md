@@ -6,13 +6,21 @@ The muscle outlines drawn by the Stats page's body map are **not original work**
 
 They are derived from [**MuscleMap**](https://github.com/melihcolpan/MuscleMap) by Melih
 Colpan, obtained via [openGym](https://github.com/DuarteSantos8/openGym)
-(`frontend/src/lib/body-paths.js`), used under the **MIT License** reproduced below. Only the
-regions this app reports are included; openGym ships 21 muscles, this app resolves exercises
-to 12, and carrying the rest would add roughly 60 KB of geometry to every page load.
+(`frontend/src/lib/body-paths.js`), used under the **MIT License** reproduced below.
 
-The file in `src/lib/` is generated. To regenerate it, take `body-paths.js` from openGym and
-filter its regions down to the ones listed in `REGIONS` in `src/lib/muscles.js`. Do not
-hand-edit the path data.
+`src/lib/body-geometry.js` is **generated** and contains openGym's `male` figure copied
+whole — both views, all 167 paths, unfiltered. The female figure is not included: it would
+nearly double the payload to ~93 KB and this app has no setting to choose it.
+
+Regenerate with:
+
+```
+node scripts/gen-body-geometry.mjs <openGym>/frontend/src/lib/body-paths.js
+```
+
+`npm run verify:geometry` asserts the output is byte-for-byte identical to upstream when a
+checkout is supplied via `OPEN_GYM_BODY_PATHS`, and always checks that every muscle the page
+draws has geometry. Do not hand-edit the path data.
 
 ```
 MIT License

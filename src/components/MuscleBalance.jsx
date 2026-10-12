@@ -93,6 +93,9 @@ export default function MuscleBalance({ sessions, exercises }) {
   )
 
   const max = ranked.length > 0 ? ranked[0].sets : 0
+  // Restricted to REGIONS, not the artwork's full set. The body map draws muscles this app
+  // cannot attribute — obliques, lower back and so on — and listing those here would claim
+  // they went untrained when the honest answer is that they were never measured.
   const untrained = REGIONS.filter(r => !(totals[r] > 0))
 
   const [expanded, setExpanded] = useState(false)
