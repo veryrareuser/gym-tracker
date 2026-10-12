@@ -70,7 +70,14 @@ function levelsOf(totals) {
   return { levels, load }
 }
 
-function View({ view, levels, load }) {
+/** Enter and Space activate a muscle; Space is swallowed so the page does not scroll. */
+function activate(event, key, onMuscle) {
+  if (event.key !== 'Enter' && event.key !== ' ') return
+  if (event.key === ' ') event.preventDefault()
+  onMuscle(key)
+}
+
+function View({ view, levels, load, selected, onMuscle }) {
   const paths = view?.p
   if (!paths) return null
 
@@ -79,8 +86,17 @@ function View({ view, levels, load }) {
   // dropping them would recreate the bug this file already had once.
   const known = new Set([...RENDER_REGIONS, 'head', 'hair', 'neck', 'hands', 'knees', 'ankles', 'feet'])
 
+  // A map nobody can interact with stays a picture. Exposing 60 paths as buttons to a
+  // keyboard or screen reader would be a trap, not a feature.
+  const interactive = Boolean(onMuscle)
+
   return (
-    <svg className="bm-v" viewBox={view.vb} role="img" aria-label="Body, training distribution">
+    <svg
+      className="bm-v"
+      viewBox={view.vb}
+      role={interactive ? 'group' : 'img'}
+      aria-label="Body, training distribution"
+    >
       {Object.entries(paths).map(([key, list]) =>
         list.map((d, i) => {
           const inert = !RENDER_REGIONS.includes(key)
@@ -88,15 +104,31 @@ function View({ view, levels, load }) {
           // One interpolated string: React requires the children of a <title> to be a
           // single string, and an array here is a fatal render error rather than a
           // warning. It took the whole page down once already.
-          const label = inert
-            ? `${RENDER_LABEL[key] || key}`
-            : `${RENDER_LABEL[key] || key}: ${sets} set${sets === 1 ? '' : 's'}`
+          const name = RENDER_LABEL[key] || key
+          const label = inert ? name : `${name}: ${sets} set${sets === 1 ? '' : 's'}`
+          const isSelected = selected === key
+          // Inert parts (head, hands, knees) are not muscles and have nothing to report.
+          const tappable = interactive && !inert
           return (
             <path
               key={`${key}${i}`}
-              className={inert ? 'bm-sil' : `bm-m l${levels[key] || 0}`}
+              className={
+                inert
+                  ? 'bm-sil'
+                  : `bm-m l${levels[key] || 0}${isSelected ? ' sel' : ''}`
+              }
               d={d}
               data-region={known.has(key) ? undefined : key}
+              {...(tappable
+                ? {
+                    role: 'button',
+                    tabIndex: 0,
+                    'aria-label': name,
+                    'aria-pressed': isSelected,
+                    onClick: () => onMuscle(key),
+                    onKeyDown: event => activate(event, key, onMuscle),
+                  }
+                : {})}
             >
               <title>{label}</title>
             </path>
@@ -107,16 +139,21 @@ function View({ view, levels, load }) {
   )
 }
 
-export default function BodyMap({ totals }) {
+/**
+ * @param totals    sets per region, keyed as REGIONS
+ * @param selected  a render key, or null
+ * @param onMuscle  called with a render key. Omit it and the map is a plain image.
+ */
+export default function BodyMap({ totals, selected = null, onMuscle }) {
   const paths = useBodyPaths()
   const { levels, load } = useMemo(() => levelsOf(totals), [totals])
 
   return (
-    <div className="bodymap">
+    <div className={onMuscle ? 'bodymap tappable' : 'bodymap'}>
       {paths ? (
         <>
-          <View view={paths.front} levels={levels} load={load} />
-          <View view={paths.back} levels={levels} load={load} />
+          <View view={paths.front} levels={levels} load={load} selected={selected} onMuscle={onMuscle} />
+          <View view={paths.back} levels={levels} load={load} selected={selected} onMuscle={onMuscle} />
         </>
       ) : (
         // Reserve the height so the card beneath does not jump when the geometry lands.

@@ -510,6 +510,20 @@ button:disabled {
 .bm-m.l2 { fill: color-mix(in srgb, var(--primary) 56%, var(--fill)) }
 .bm-m.l3 { fill: color-mix(in srgb, var(--primary) 78%, var(--fill)) }
 .bm-m.l4 { fill: var(--primary) }
+/* Row shown for the muscle picked on the body map. */
+.m-sel { border-top: 1px solid var(--line); padding-top: 10px }
+/* Selection is drawn as a fat outline rather than a colour change: the shade already
+   encodes how hard a muscle was worked, so recolouring it would destroy that reading. */
+.bm-m.sel { stroke: var(--ink); stroke-width: 7 }
+.bodymap.tappable .bm-m { cursor: pointer; touch-action: manipulation }
+/* Keyboard focus gets the same outline as selection, so a keyboard user can see where
+   they are without clicking first. */
+.bodymap.tappable .bm-m:focus-visible {
+  outline: none;
+  stroke: var(--ink);
+  stroke-width: 7;
+  filter: drop-shadow(0 0 2px var(--surface));
+}
 /* Stroke in the surface colour rather than a darker outline: it reads as a gap between
    muscles instead of a drawn border, which is what makes the silhouette legible. */
 .bm-v path { stroke: var(--surface); stroke-width: 2.5; stroke-linejoin: round }
