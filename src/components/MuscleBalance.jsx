@@ -1,7 +1,7 @@
 // src/components/MuscleBalance.jsx
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { Dumbbell, ChevronLeft, ChevronRight } from 'lucide-react'
-import { REGIONS, REGION_LABEL, regionsFor } from '../lib/muscles'
+import { REGIONS, REGION_LABEL, RENDER_KEY, RENDER_LABEL, regionsFor } from '../lib/muscles'
 import { localISODate, weekStartISO } from '../lib/utils'
 import BodyMap from './BodyMap'
 
@@ -77,6 +77,9 @@ export default function MuscleBalance({ sessions, exercises }) {
   const [period, setPeriod] = useState('30d')
   // 0 = the current week. Positive steps go back in time, never forward.
   const [weekOffset, setWeekOffset] = useState(0)
+  // A muscle picked on the body map, held as an artwork key (see RENDER_KEY in lib/muscles).
+  // null when nothing is picked.
+  const [selected, setSelected] = useState(null)
 
   const exercisesById = useMemo(() => new Map((exercises || []).map(e => [e.id, e])), [exercises])
 
@@ -97,6 +100,36 @@ export default function MuscleBalance({ sessions, exercises }) {
   // cannot attribute — obliques, lower back and so on — and listing those here would claim
   // they went untrained when the honest answer is that they were never measured.
   const untrained = REGIONS.filter(r => !(totals[r] > 0))
+
+  // Tapping the same muscle again clears it, which is how a selection gets dismissed
+  // without a separate control.
+  const toggleSel = useCallback(key => setSelected(current => (current === key ? null : key)), [])
+
+  // A picked muscle refers to set counts in the current period, so changing the period
+  // invalidates it: leaving it selected would show a name next to a number from a
+  // different window. Cleared in the handlers that cause the change rather than in an
+  // effect, which would cost a second render pass on every period switch.
+  const changePeriod = useCallback(next => {
+    setSelected(null)
+    setPeriod(next)
+    if (next !== 'week') setWeekOffset(0)
+  }, [])
+
+  const shiftWeek = useCallback(delta => {
+    setSelected(null)
+    setWeekOffset(o => Math.max(0, o + delta))
+  }, [])
+
+  // Reverse lookup: the artwork keys its own way, this app attributes its own way.
+  const selectedRegion = useMemo(() => {
+    if (!selected) return null
+    return Object.keys(RENDER_KEY).find(region => RENDER_KEY[region] === selected) || null
+  }, [selected])
+
+  const selectedSets = selectedRegion ? Math.round(totals[selectedRegion] || 0) : 0
+  // A drawn muscle the app cannot attribute at all. Named on tap rather than left inert,
+  // so pointing at your obliques gets an honest answer instead of silence.
+  const selectedMeasured = Boolean(selectedRegion)
 
   const [expanded, setExpanded] = useState(false)
   const shown = expanded ? ranked : ranked.slice(0, SHOW_ALL)
@@ -132,10 +165,7 @@ export default function MuscleBalance({ sessions, exercises }) {
         {PERIODS.map(p => (
           <button
             key={p.key}
-            onClick={() => {
-              setPeriod(p.key)
-              if (p.key !== 'week') setWeekOffset(0)
-            }}
+            onClick={() => changePeriod(p.key)}
             aria-pressed={period === p.key}
             style={{
               border: 0,
@@ -157,7 +187,7 @@ export default function MuscleBalance({ sessions, exercises }) {
       {period === 'week' && (
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
           <button
-            onClick={() => setWeekOffset(o => o + 1)}
+            onClick={() => shiftWeek(1)}
             aria-label="Previous week"
             className="hit"
             style={{ background: 'transparent', border: 0, padding: 4 }}
@@ -168,7 +198,7 @@ export default function MuscleBalance({ sessions, exercises }) {
             Week of {localISODate(weekStart)}
           </span>
           <button
-            onClick={() => setWeekOffset(o => Math.max(0, o - 1))}
+            onClick={() => shiftWeek(-1)}
             disabled={!canGoForward}
             aria-label="Next week"
             className="hit"
@@ -187,7 +217,7 @@ export default function MuscleBalance({ sessions, exercises }) {
         </div>
       ) : (
         <>
-          <BodyMap totals={totals} />
+          <BodyMap totals={totals} selected={selected} onMuscle={toggleSel} />
 
           <div className="hm-legend" style={{ justifyContent: 'center' }}>
             Less
@@ -197,28 +227,83 @@ export default function MuscleBalance({ sessions, exercises }) {
             More
           </div>
 
-          {/* Ranked regions */}
+          {/* What the picked muscle is, or a prompt to pick one. Replaces the ranked list's
+              own rows while a selection is active, mirroring openGym, so the two never
+              show competing numbers for the same muscle. */}
+          {selected ? (
+            <div
+              className="m-sel"
+              style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginTop: 14 }}
+            >
+              <span style={{ fontSize: 'var(--type-subhead)', fontWeight: 'var(--weight-semibold)' }}>
+                {RENDER_LABEL[selected] || selected}
+              </span>
+              <span className="tnum" style={{ fontSize: 'var(--type-subhead)', color: 'var(--ink-muted)' }}>
+                {selectedMeasured
+                  ? `${selectedSets} set${selectedSets === 1 ? '' : 's'}`
+                  : 'Not measured'}
+              </span>
+            </div>
+          ) : (
+            <p
+              style={{
+                margin: '14px 0 0',
+                fontSize: 'var(--type-fine)',
+                color: 'var(--ink-muted)',
+                textAlign: 'center',
+              }}
+            >
+              Tap a muscle to see its sets.
+            </p>
+          )}
+
+          {/* Ranked regions. Each row also selects on the map, so the list and the figure
+              are two views of one selection rather than one of them being decorative. */}
           <ul style={{ listStyle: 'none', margin: '18px 0 0', padding: 0 }}>
-            {shown.map(({ region, sets }) => (
-              <li key={region} style={{ marginBottom: 10 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                  <span style={{ fontSize: 'var(--type-subhead)' }}>{REGION_LABEL[region]}</span>
-                  <span className="tnum" style={{ fontSize: 'var(--type-subhead)', color: 'var(--ink-muted)' }}>
-                    {Math.round(sets)} sets
-                  </span>
-                </div>
-                <div style={{ height: 8, background: 'var(--fill)', borderRadius: 'var(--rounded-pill)', overflow: 'hidden' }}>
-                  <div
+            {shown.map(({ region, sets }) => {
+              const isSelected = selected === RENDER_KEY[region]
+              return (
+                <li key={region} style={{ marginBottom: 10 }}>
+                  <button
+                    onClick={() => toggleSel(RENDER_KEY[region])}
+                    aria-pressed={isSelected}
                     style={{
-                      width: `${max > 0 ? Math.round((sets / max) * 100) : 0}%`,
-                      height: '100%',
-                      background: 'rgb(0, 140, 60)',
-                      borderRadius: 'var(--rounded-pill)',
+                      display: 'block',
+                      width: '100%',
+                      background: 'transparent',
+                      border: 0,
+                      padding: 0,
+                      textAlign: 'left',
+                      cursor: 'pointer',
                     }}
-                  />
-                </div>
-              </li>
-            ))}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                      <span
+                        style={{
+                          fontSize: 'var(--type-subhead)',
+                          fontWeight: isSelected ? 'var(--weight-semibold)' : 'var(--weight-regular)',
+                        }}
+                      >
+                        {REGION_LABEL[region]}
+                      </span>
+                      <span className="tnum" style={{ fontSize: 'var(--type-subhead)', color: 'var(--ink-muted)' }}>
+                        {Math.round(sets)} sets
+                      </span>
+                    </div>
+                    <div style={{ height: 8, background: 'var(--fill)', borderRadius: 'var(--rounded-pill)', overflow: 'hidden' }}>
+                      <div
+                        style={{
+                          width: `${max > 0 ? Math.round((sets / max) * 100) : 0}%`,
+                          height: '100%',
+                          background: 'rgb(0, 140, 60)',
+                          borderRadius: 'var(--rounded-pill)',
+                        }}
+                      />
+                    </div>
+                  </button>
+                </li>
+              )
+            })}
           </ul>
 
           {hidden > 0 && !expanded && (

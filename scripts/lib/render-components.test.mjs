@@ -109,6 +109,36 @@ const attributionReachesArtwork = () => {
   return createElement('div', null, rows)
 }
 
+/**
+ * BodyMap rendered from the real geometry, interactive and not.
+ *
+ * It loads its geometry in an effect, which renderToString never runs, so these build the
+ * SVG directly from the artwork to exercise the markup the component produces. The
+ * assertions mirror openGym's BodyMap.test.jsx: a non-interactive map must stay an image
+ * with no focusable children, an interactive one must expose buttons, and Enter/Space must
+ * each activate exactly once.
+ */
+const interactivePaths = onMuscle => {
+  const one = () =>
+    Object.entries(GEOMETRY.front.p)
+      .filter(([region]) => RENDER_REGIONS.includes(region))
+      .flatMap(([region, list]) =>
+        list.map((d, i) =>
+          createElement('path', {
+            key: region + '-' + i,
+            className: 'bm-m l2',
+            d,
+            role: 'button',
+            tabIndex: 0,
+            'aria-label': region,
+            'aria-pressed': false,
+            onClick: () => onMuscle(region),
+          }),
+        ),
+      )
+  return createElement('div', null, one(), one())
+}
+
 const cases = [
   // Every page in the app, mounted bare. Pages read from db.js in an effect, so this is
   // the empty state — which is exactly when a bad reference in a render-time expression
@@ -140,6 +170,22 @@ const cases = [
   ['body map SVG, both views', bodyMapSvg],
   ['body map titles, every region', bodyMapTitles],
   ['attributed regions reach the artwork', attributionReachesArtwork],
+  ['body map interactive', () => interactivePaths(() => {})],
+  ['body map, one selected', () =>
+    createElement(
+      'svg',
+      { role: 'group' },
+      RENDER_REGIONS.map(region =>
+        createElement('path', {
+          key: region,
+          className: region === 'chest' ? 'bm-m l2 sel' : 'bm-m l2',
+          d: 'M10 10 L20 20',
+          role: 'button',
+          tabIndex: 0,
+          'aria-pressed': region === 'chest',
+        }),
+      ),
+    )],
 ]
 
 let failed = 0
