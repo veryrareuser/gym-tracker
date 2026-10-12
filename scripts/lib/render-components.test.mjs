@@ -28,6 +28,8 @@ const HARNESS = `
 import { createElement } from 'react'
 import { renderToString } from 'react-dom/server'
 import { MemoryRouter } from 'react-router-dom'
+import GEOMETRY from '../../src/lib/body-geometry.js'
+import { RENDER_REGIONS, RENDER_KEY } from '../../src/lib/muscles.js'
 
 import SignIn from '../../src/components/SignIn.jsx'
 import Layout from '../../src/components/Layout.jsx'
@@ -64,6 +66,49 @@ const sessions = perDay.map(([date, sets], i) => ({
 
 const routed = el => createElement(MemoryRouter, null, el)
 
+// Both views of the artwork, every path, as real SVG elements.
+const bodyMapSvg = () => {
+  const view = geometry =>
+    createElement(
+      'svg',
+      { viewBox: geometry.vb },
+      Object.entries(geometry.p).flatMap(([key, list]) =>
+        list.map((d, i) => createElement('path', { key: key + '-' + i, d })),
+      ),
+    )
+  return createElement('div', null, view(GEOMETRY.front), view(GEOMETRY.back))
+}
+
+// The <title> interpolation BodyMap uses, for every region it can draw. A <title> given
+// several children instead of one string is a fatal React error, so the shape matters.
+const bodyMapTitles = () =>
+  createElement(
+    'div',
+    null,
+    RENDER_REGIONS.map(region => {
+      const sets = 12
+      const plural = sets === 1 ? '' : 's'
+      const label = region + ': ' + sets + ' set' + plural
+      return createElement('svg', { key: region }, createElement('title', null, label))
+    }),
+  )
+
+/**
+ * Every region the app attributes training to must exist in the artwork under its
+ * RENDER_KEY name. This asserts it by checking the rendered text, not by eyeballing: a key
+ * pointing at nothing means that region is credited with sets on screen and drawn nowhere.
+ */
+const attributionReachesArtwork = () => {
+  const rows = Object.keys(RENDER_KEY).map(region => {
+    const key = RENDER_KEY[region]
+    const where = GEOMETRY.front.p[key] ? 'front' : GEOMETRY.back.p[key] ? 'back' : 'MISSING'
+    return createElement('span', { key: region }, region + '=' + where)
+  })
+  const html = renderToString(createElement('div', null, rows))
+  if (html.includes('MISSING')) throw new Error('an attributed region maps to no artwork key: ' + html)
+  return createElement('div', null, rows)
+}
+
 const cases = [
   // Every page in the app, mounted bare. Pages read from db.js in an effect, so this is
   // the empty state — which is exactly when a bad reference in a render-time expression
@@ -87,6 +132,14 @@ const cases = [
   ['ActivityHeatmap, no sessions', () => createElement(ActivityHeatmap, { sessions: [] })],
   ['MuscleBalance, no sessions', () => createElement(MuscleBalance, { sessions: [], exercises: [] })],
   ['MuscleBalance, exercises undefined', () => createElement(MuscleBalance, { sessions, exercises: undefined })],
+  // BodyMap loads its geometry in an effect, so renderToString never sees the figure and
+  // the MuscleBalance cases above exercise almost none of it. Rendering the geometry
+  // directly is what actually covers the SVG: a malformed path, a missing region, or a
+  // <title> with several children — the bug that blanked the whole page twice — would
+  // otherwise pass here while breaking on screen.
+  ['body map SVG, both views', bodyMapSvg],
+  ['body map titles, every region', bodyMapTitles],
+  ['attributed regions reach the artwork', attributionReachesArtwork],
 ]
 
 let failed = 0

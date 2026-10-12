@@ -501,6 +501,9 @@ button:disabled {
 /* Body map. max-height is what keeps the figure from dominating a phone screen. */
 .bodymap { display: flex; gap: 10px; justify-content: center; align-items: flex-start }
 .bm-v { flex: 1; min-width: 0; height: auto; max-height: min(46vh, 340px) }
+/* Placeholder while the geometry loads, sized to the same footprint as the real figures
+   so nothing below it shifts when they arrive. */
+.bm-ph { flex: 1; height: min(46vh, 340px) }
 .bm-sil { fill: color-mix(in srgb, var(--ink) 18%, var(--surface)) }
 .bm-m { fill: var(--fill); transition: fill 200ms ease }
 .bm-m.l1 { fill: color-mix(in srgb, var(--primary) 32%, var(--fill)) }

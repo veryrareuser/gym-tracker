@@ -17,7 +17,15 @@
 // Adapted from openGym's frontend/src/lib/muscles.js, which solves the same problem over a
 // 6,500-exercise dataset. The structure is theirs; the table is scoped to this library.
 
-/** Regions the body map can shade, head to toe. Also the order of the list beside it. */
+/**
+ * Regions this app attributes training to, head to toe. Also the order of the ranked list
+ * beside the body map.
+ *
+ * Deliberately shorter than RENDER_REGIONS. These are the regions a set can honestly be
+ * credited to, given what the exercise metadata carries. A region absent from this list is
+ * not "untrained" — it is unmeasured — and saying otherwise would be a claim the data does
+ * not support.
+ */
 export const REGIONS = [
   'trapezius',
   'shoulders',
@@ -33,9 +41,71 @@ export const REGIONS = [
   'calves',
 ]
 
-/** Draw the silhouette in this tone; they never carry training load. */
-export const INERT = ['head', 'neck', 'hands', 'legs-unknown']
+/**
+ * Every muscle the body map artwork draws, keyed the way the geometry keys them.
+ *
+ * The artwork is openGym's, copied whole, so it carries all 18 of their muscles whether or
+ * not this app can attribute them. The six that are drawn but never credited — obliques,
+ * lower back, serratus, adductors, hip flexors and tibialis — render in the inert tone and
+ * say so on hover. That is the honest outcome: the body has those muscles, the app cannot
+ * yet measure them.
+ *
+ * Kept separate from REGIONS so the two jobs do not get confused. REGIONS drives
+ * attribution and the ranked list; this drives rendering and tooltips.
+ */
+export const RENDER_REGIONS = [
+  'trapezius',
+  'deltoids',
+  'chest',
+  'serratus',
+  'upper-back',
+  'lower-back',
+  'biceps',
+  'triceps',
+  'forearm',
+  'obliques',
+  'abs',
+  'hip-flexors',
+  'gluteal',
+  'adductors',
+  'quadriceps',
+  'hamstring',
+  'calves',
+  'tibialis',
+]
 
+/**
+ * Maps a region this app attributes to, onto the artwork's key for the same body part.
+ *
+ * The names differ: this app says "shoulders" where the artwork says "deltoids", and so on
+ * for five more. Without this the map would render every one of those regions inert.
+ */
+export const RENDER_KEY = {
+  trapezius: 'trapezius',
+  shoulders: 'deltoids',
+  chest: 'chest',
+  'upper-back': 'upper-back',
+  biceps: 'biceps',
+  triceps: 'triceps',
+  forearms: 'forearm',
+  abs: 'abs',
+  glutes: 'gluteal',
+  quadriceps: 'quadriceps',
+  hamstrings: 'hamstring',
+  calves: 'calves',
+}
+
+/**
+ * Parts of the artwork drawn but never shaded. They carry no training load in any model:
+ * the head and neck, the hands, and the joints.
+ *
+ * `legs-unknown` was here before the geometry was copied whole and matched nothing. The
+ * artwork's own inert parts are `head`, `hair`, `neck`, `hands`, `knees`, `ankles` and
+ * `feet`.
+ */
+export const INERT = ['head', 'hair', 'neck', 'hands', 'knees', 'ankles', 'feet']
+
+/** Labels for the regions this app attributes to. */
 export const REGION_LABEL = {
   trapezius: 'Traps',
   shoulders: 'Shoulders',
@@ -49,6 +119,25 @@ export const REGION_LABEL = {
   quadriceps: 'Quads',
   hamstrings: 'Hamstrings',
   calves: 'Calves',
+}
+
+/**
+ * Labels for every muscle the artwork draws, including the six this app cannot attribute.
+ * Without these their tooltips would show a raw key.
+ */
+export const RENDER_LABEL = {
+  ...REGION_LABEL,
+  deltoids: 'Shoulders',
+  serratus: 'Serratus',
+  'lower-back': 'Lower back',
+  forearm: 'Forearms',
+  obliques: 'Obliques',
+  'hip-flexors': 'Hip flexors',
+  gluteal: 'Glutes',
+  adductors: 'Adductors',
+  quadriceps: 'Quads',
+  hamstring: 'Hamstrings',
+  tibialis: 'Shins',
 }
 
 /**
