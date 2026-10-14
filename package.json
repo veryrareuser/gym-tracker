@@ -28,7 +28,7 @@
     "verify:date-default": "node scripts/verify-date-default.mjs"
   },
   "dependencies": {
-    "@supabase/supabase-js": "2.116.0",
+    "@supabase/supabase-js": "2.117.3",
     "@tailwindcss/vite": "4.3.3",
     "lucide-react": "1.53.0",
     "react": "19.3.0",
