@@ -7,6 +7,7 @@ import { generateId, todayISO, formatDate } from '../lib/utils'
 import { imageUrl } from '../lib/exerciseDb'
 import { startTimer } from '../lib/timer'
 import useAutosave from '../lib/useAutosave'
+import { mergeWithLibrary } from '../lib/draft'
 import { currentUserId } from '../lib/auth'
 import ExercisePicker from '../components/ExercisePicker'
 
@@ -123,16 +124,11 @@ export default function LogWorkout() {
         setCurrentSessionId(cloud.id)
         setDate(cloud.date || todayISO())
         setSessionNotes(cloud.notes || '')
-        setLogs(
-          (cloud.exercise_logs || []).map(log => {
-            const ex = exs.find(e => e.id === log.exercise_id)
-            return {
-              ...log,
-              _name: ex?.name || 'Unknown',
-              _image_url: ex?.image_url || null,
-            }
-          }),
-        )
+        // Merged back into the library, not used as the whole editor. The draft only holds
+        // exercises with a logged set, so restoring it verbatim would reopen the page with
+        // one card — the one you happened to fill last. Re-seeding puts every exercise
+        // back, empty ones included, which is what you were looking at when you left.
+        setLogs(mergeWithLibrary(exs, cloud.exercise_logs, generateId))
         setHasDraft(true)
         loadedRef.current = true
         return
@@ -145,7 +141,10 @@ export default function LogWorkout() {
           if (cancelled) return
           setDate(draft.date || todayISO())
           setSessionNotes(draft.sessionNotes || '')
-          setLogs(draft.logs || [])
+          // Same reason as above. The local mirror keeps every card, including empty ones,
+          // so a library that has since gained an exercise would not show it — merging
+          // keeps both paths consistent.
+          setLogs(mergeWithLibrary(exs, draft.logs, generateId))
           setHasDraft(true)
           loadedRef.current = true
           return
@@ -243,7 +242,7 @@ export default function LogWorkout() {
   // Autosave runs for new sessions only. Editing a saved workout is a deliberate, brief
   // change to something that already exists in the cloud, and a draft row for it would
   // mean two copies of one session.
-  const { saving: autosaving } = useAutosave(autosaveSession, { enabled: !isEditMode })
+  const { state: autosaveState } = useAutosave(autosaveSession, { enabled: !isEditMode })
 
   function updateSet(logId, setId, field, value) {
     setLogs(prev =>
@@ -366,16 +365,25 @@ export default function LogWorkout() {
             <RotateCcw size={14} /> {formatDate(date)}
           </button>
         )}
-        {/* Autosave is silent by design — it should not compete with the workout for
-            attention — but the one moment worth acknowledging is the write that just
-            happened, so a user who did not press Save knows the work is safe. */}
-        {!isEditMode && autosaving && (
+        {/* Autosave is quiet by design — it should not compete with the workout for
+            attention. But "Saved" must never appear before the write has actually
+            succeeded. The earlier version showed the chip while the request was in flight,
+            so a failed save looked identical to a successful one — which is precisely how
+            this went unnoticed. The state here is 'saved' only once it is true. */}
+        {!isEditMode && autosaveState && (
           <span
             className="chip"
             role="status"
-            style={{ minHeight: 36, opacity: 0.7, pointerEvents: 'none' }}
+            style={{
+              minHeight: 36,
+              pointerEvents: 'none',
+              opacity: 0.75,
+              color: autosaveState === 'failed' ? 'var(--destructive)' : 'var(--ink-muted)',
+            }}
           >
-            Saved
+            {autosaveState === 'saving' && 'Saving…'}
+            {autosaveState === 'saved' && 'Saved'}
+            {autosaveState === 'failed' && 'Not saved'}
           </span>
         )}
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>

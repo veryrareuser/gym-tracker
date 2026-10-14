@@ -29,3 +29,6 @@ public/exercises.json
 *.njsproj
 *.sln
 *.sw?
+
+# Test bundles written by the verify:* harnesses
+scripts/lib/.*.bundle.mjs

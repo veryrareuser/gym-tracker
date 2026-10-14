@@ -30,6 +30,7 @@ jobs:
       - run: npm run verify:geometry
       - run: npm run verify:bodymap
       - run: npm run verify:drafts
+      - run: npm run verify:restore
       - run: npm run build
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
