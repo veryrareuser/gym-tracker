@@ -1,3 +1,14 @@
+-- Month-scoped aggregates, and the cross-account records behind them.
+--
+-- Both functions exclude is_draft. They are SECURITY DEFINER and read workout_sessions
+-- directly, so they never see the client's filter, and without the predicate an
+-- in-progress set would count toward public standings or surface in a friend's records.
+--
+-- Reference copy. The live definitions were replaced by sql/session-drafts.sql, which
+-- drops each signature explicitly first -- CREATE OR REPLACE cannot change an argument
+-- list (PROJECT_UNDERSTANDING.md, Trap 1). Keep the two in step: npm run verify:drafts
+-- asserts the filters are present here.
+
 CREATE OR REPLACE FUNCTION public.leaderboard(p_month_start date DEFAULT NULL::date)
  RETURNS TABLE(username text, volume_month numeric, sessions_month bigint, best_set numeric, total_volume numeric, total_sessions bigint)
  LANGUAGE sql
@@ -24,6 +35,7 @@ AS $function$
     join public.set_entries s on s.exercise_log_id = l.id and s.user_id = l.user_id
     cross join bounds b
     where w.date between b.start_at and b.end_at
+      and not coalesce(w.is_draft, false)
     group by w.user_id
   ),
   lifetime as (
@@ -34,6 +46,7 @@ AS $function$
     from public.workout_sessions w
     join public.exercise_logs l on l.session_id = w.id and l.user_id = w.user_id
     join public.set_entries s on s.exercise_log_id = l.id and s.user_id = l.user_id
+    where not coalesce(w.is_draft, false)
     group by w.user_id
   ),
   best as (
@@ -44,6 +57,7 @@ AS $function$
     join public.exercise_logs l on l.session_id = w.id and l.user_id = w.user_id
     join public.set_entries s on s.exercise_log_id = l.id and s.user_id = l.user_id
     where s.weight is not null
+      and not coalesce(w.is_draft, false)
     group by w.user_id
   )
   select
@@ -94,6 +108,9 @@ AS $function$
     join public.workout_sessions s on s.id = l.session_id and s.user_id = l.user_id
     where l.user_id = (select id from target)
       and se.weight is not null
+      -- A friend's records are the most privacy-sensitive surface in the app. An
+      -- in-progress set must never be published there.
+      and not coalesce(s.is_draft, false)
   )
   select
     e.name,

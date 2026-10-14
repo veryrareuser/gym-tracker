@@ -1,11 +1,12 @@
 // src/pages/LogWorkout.jsx
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useMemo, useState, useRef } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { Plus, Trash2, ChevronDown, ChevronUp, Check, ArrowLeft, RotateCcw, Timer, CircleAlert, Dumbbell } from 'lucide-react'
-import { getExercises, getSessions, saveExercise, saveSession } from '../lib/db'
+import { getExercises, getSessions, getDraft, discardDraft, saveExercise, saveSession } from '../lib/db'
 import { generateId, todayISO, formatDate } from '../lib/utils'
 import { imageUrl } from '../lib/exerciseDb'
 import { startTimer } from '../lib/timer'
+import useAutosave from '../lib/useAutosave'
 import { currentUserId } from '../lib/auth'
 import ExercisePicker from '../components/ExercisePicker'
 
@@ -71,10 +72,12 @@ export default function LogWorkout() {
   const [hasDraft, setHasDraft] = useState(false)
   const [restDuration, setRestDuration] = useState(90)
   const [showPicker, setShowPicker] = useState(false)
-  const [currentSessionId] = useState(() => sessionId || generateId())
   const isEditMode = Boolean(sessionId)
   // Prevents the draft effect from writing an empty draft during the async load.
   const loadedRef = useRef(false)
+  // Autosave resumes a cloud draft under its own id, so this is state, not a constant
+  // initialised from the route. Editing an existing session must keep that session's id.
+  const [currentSessionId, setCurrentSessionId] = useState(() => sessionId || generateId())
 
   useEffect(() => {
     let cancelled = false
@@ -107,11 +110,34 @@ export default function LogWorkout() {
 
       // New session — restore a draft before falling back to a blank slate.
       //
-      // sessionStorage is the primary copy and the localStorage mirror is the
-      // fallback, so a draft written before the window was closed is still here on
-      // the next visit. The mirror is deliberately left in place on restore: the
-      // autosave effect below rewrites both stores on the next tick, and it is only
-      // cleared by saving, discarding, or the draft emptying out.
+      // The cloud draft is checked first and wins. It is the only copy that survives the
+      // tab being killed or the account being signed out, which is the case this whole
+      // feature exists for; the local mirror cannot be trusted ahead of it, because it is
+      // gone in precisely the situations where recovery matters.
+      //
+      // A local copy with no cloud counterpart is still used, so the feature degrades to
+      // what it was rather than to nothing when the write never happened.
+      const cloud = await getDraft()
+      if (cancelled) return
+      if (cloud) {
+        setCurrentSessionId(cloud.id)
+        setDate(cloud.date || todayISO())
+        setSessionNotes(cloud.notes || '')
+        setLogs(
+          (cloud.exercise_logs || []).map(log => {
+            const ex = exs.find(e => e.id === log.exercise_id)
+            return {
+              ...log,
+              _name: ex?.name || 'Unknown',
+              _image_url: ex?.image_url || null,
+            }
+          }),
+        )
+        setHasDraft(true)
+        loadedRef.current = true
+        return
+      }
+
       const raw = readDraft()
       if (raw) {
         try {
@@ -178,14 +204,46 @@ export default function LogWorkout() {
     return () => window.removeEventListener('beforeunload', warn)
   }, [hasDraft, isEditMode])
 
-  function discardDraft() {
+  // Clears both copies of the draft: the local mirror and the cloud row. The cloud delete
+  // is fire-and-forget — the screen has already reset, and a failure here would leave a
+  // draft that the next autosave replaces anyway (one draft per account).
+  function discardCurrentDraft() {
     sessionStorage.removeItem(draftKey())
     mirrorDraft('clear')
+    discardDraft().catch(() => {})
     setHasDraft(false)
     setDate(todayISO())
     setSessionNotes('')
+    setCurrentSessionId(generateId())
     setLogs(exercises.map((ex, i) => emptyLog(ex, i)))
   }
+
+  // What autosave writes. Same shape handleSave builds, minus the filtering that only
+  // makes sense at commit time: a draft keeps every set the user has typed, including
+  // half-filled ones, because that is the state being protected.
+  const autosaveSession = useMemo(
+    () => ({
+      id: currentSessionId,
+      date,
+      notes: sessionNotes,
+      exercise_logs: logs
+        .filter(log => log.set_entries.some(s => s.weight || s.reps))
+        .map((log, i) => ({
+          id: log.id,
+          exercise_id: log.exercise_id,
+          order: i,
+          set_entries: log.set_entries
+            .filter(s => s.weight || s.reps)
+            .map(s => ({ ...s, exercise_log_id: log.id })),
+        })),
+    }),
+    [currentSessionId, date, sessionNotes, logs],
+  )
+
+  // Autosave runs for new sessions only. Editing a saved workout is a deliberate, brief
+  // change to something that already exists in the cloud, and a draft row for it would
+  // mean two copies of one session.
+  const { saving: autosaving } = useAutosave(autosaveSession, { enabled: !isEditMode })
 
   function updateSet(logId, setId, field, value) {
     setLogs(prev =>
@@ -270,7 +328,9 @@ export default function LogWorkout() {
         })),
     }
     try {
-      await saveSession(session)
+      // draft: false promotes whatever autosave wrote: same row, same id, flag flipped.
+      // There is no copy step, so a draft cannot survive a successful save.
+      await saveSession(session, { draft: false })
       sessionStorage.removeItem(draftKey())
       mirrorDraft('clear')
       navigate('/history')
@@ -302,9 +362,21 @@ export default function LogWorkout() {
           {isEditMode ? 'Edit Session' : 'Log Workout'}
         </h1>
         {hasDraft && !isEditMode && (
-          <button onClick={discardDraft} className="chip" style={{ minHeight: 36 }}>
+          <button onClick={discardCurrentDraft} className="chip" style={{ minHeight: 36 }}>
             <RotateCcw size={14} /> {formatDate(date)}
           </button>
+        )}
+        {/* Autosave is silent by design — it should not compete with the workout for
+            attention — but the one moment worth acknowledging is the write that just
+            happened, so a user who did not press Save knows the work is safe. */}
+        {!isEditMode && autosaving && (
+          <span
+            className="chip"
+            role="status"
+            style={{ minHeight: 36, opacity: 0.7, pointerEvents: 'none' }}
+          >
+            Saved
+          </span>
         )}
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
           <input

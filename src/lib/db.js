@@ -232,11 +232,21 @@ export async function setProfileVisible(visible) {
 }
 
 /* ─── Sessions ─── */
+
+/**
+ * Real, saved workouts. Drafts are excluded here and nowhere else in the client: every
+ * page that counts training goes through this function, so one filter keeps an in-progress
+ * session out of history, stats, the heatmap and the streak at once.
+ *
+ * Server-side aggregates (leaderboard, friend PRs) filter independently, because they read
+ * the tables directly and bypass this.
+ */
 export async function getSessions() {
   if (supabase) {
     const { data, error } = await supabase
       .from('workout_sessions')
       .select('*, exercise_logs(*, set_entries(*))')
+      .eq('is_draft', false)
       .order('date', { ascending: false })
     if (!error && data) {
       const sessions = data.map(s => ({ ...s, exercise_logs: sortLogs(s.exercise_logs) }))
@@ -245,8 +255,43 @@ export async function getSessions() {
     }
   }
   return localGet('sessions')
+    .filter(s => !s.is_draft)
     .map(s => ({ ...s, exercise_logs: sortLogs(s.exercise_logs) }))
     .sort((a, b) => b.date.localeCompare(a.date))
+}
+
+/**
+ * The account's in-progress workout, if one survived.
+ *
+ * This is what makes autosave worth having: the draft is in Postgres, so it comes back
+ * after the tab is closed, after the browser is killed, and after signing out and back in
+ * from another device. At most one exists per account — a new draft replaces the old one.
+ */
+export async function getDraft() {
+  if (!supabase) return null
+  const { data, error } = await supabase
+    .from('workout_sessions')
+    .select('*, exercise_logs(*, set_entries(*))')
+    .eq('is_draft', true)
+    .order('created_at', { ascending: false })
+    .limit(1)
+  if (error || !data || data.length === 0) return null
+  const row = data[0]
+  return { ...row, exercise_logs: sortLogs(row.exercise_logs) }
+}
+
+/**
+ * Throw away the account's draft without touching saved workouts.
+ *
+ * Called when a draft is abandoned or replaced. Scoped to is_draft so it can never delete
+ * a real session, whatever id is passed.
+ */
+export async function discardDraft() {
+  if (!supabase) return
+  unwrap(
+    await supabase.from('workout_sessions').delete().eq('is_draft', true),
+    'discard draft',
+  )
 }
 
 /** PostgREST returns nested rows unordered; `order` is the only intended sequence. */
@@ -256,15 +301,43 @@ function sortLogs(logs) {
     .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
 }
 
-export async function saveSession(session) {
+/**
+ * Write a session and everything under it.
+ *
+ * @param session       the workout
+ * @param options.draft when true the row is stored as an in-progress draft: excluded from
+ *                      history, stats and the leaderboard. When false or absent it is a
+ *                      real workout.
+ *
+ * Saving a draft replaces any other draft for the account, so there is never more than one
+ * workout in progress. That is a deliberate product choice — someone trains one workout at
+ * a time — and it stops abandoned drafts accumulating in the cloud forever.
+ *
+ * The draft's logs and sets live in the same tables as real ones. That is why the flag
+ * alone is not enough protection: anything aggregating those tables directly has to filter
+ * it, which the two SECURITY DEFINER functions do.
+ */
+export async function saveSession(session, { draft = false } = {}) {
   const userId = requireUserId('save a session')
-  const sessions = localGet('sessions')
-  const idx = sessions.findIndex(s => s.id === session.id)
-  if (idx >= 0) sessions[idx] = session
-  else sessions.push(session)
-  localSet('sessions', sessions)
+
+  // A draft must not reach the local sessions cache: that cache is what History, the
+  // dashboard and the stats page read, and a half-finished workout counted there would be
+  // the exact thing the draft flag exists to prevent.
+  if (!draft) {
+    const sessions = localGet('sessions')
+    const idx = sessions.findIndex(s => s.id === session.id)
+    if (idx >= 0) sessions[idx] = session
+    else sessions.push(session)
+    localSet('sessions', sessions)
+  }
 
   if (!supabase) return session
+
+  if (draft) {
+    // One draft per account: clear the previous one before writing this.
+    // Scoped by is_draft so a saved workout is untouchable here.
+    unwrap(await supabase.from('workout_sessions').delete().eq('is_draft', true), 'replace previous draft')
+  }
 
   // 1. Session header
   unwrap(
@@ -273,6 +346,7 @@ export async function saveSession(session) {
       date: session.date,
       notes: session.notes || null,
       user_id: userId,
+      is_draft: draft,
     }),
     `save session ${session.id}`,
   )
