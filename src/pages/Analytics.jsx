@@ -7,7 +7,8 @@ import {
   BarChart, Bar, Cell,
 } from 'recharts'
 import { getSessions, getExercises } from '../lib/db'
-import { calcVolume, getTopSet } from '../lib/utils'
+import { formatDate, getTopSet } from '../lib/utils'
+import { volumeBuckets, startsNewMonth } from '../lib/stats'
 import { useColorScheme, useChartTheme, CHART_COLORS, ChartThemeContext } from '../lib/useColorScheme'
 import { currentUsername } from '../lib/auth'
 import Leaderboard from '../components/Leaderboard'
@@ -15,6 +16,25 @@ import PersonalRecords from '../components/PersonalRecords'
 import StatCards from '../components/StatCards'
 import ActivityHeatmap from '../components/ActivityHeatmap'
 import MuscleBalance from '../components/MuscleBalance'
+
+/**
+ * Grouping options for the volume chart, and the short month name it needs.
+ *
+ * Week first: it bounds the bar count by the calendar rather than by how often you train,
+ * which is the thing that made one-bar-per-session unusable. Month answers "how am I
+ * trending"; Session keeps the original view for spotting a single heavy day.
+ */
+const VOLUME_PERIODS = [
+  { key: 'week', label: 'Week', short: 'W' },
+  { key: 'month', label: 'Month', short: 'M' },
+  { key: 'session', label: 'Session', short: 'S' },
+]
+
+function monthAbbr(iso) {
+  return ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][
+    new Date(`${iso}T00:00:00`).getMonth()
+  ]
+}
 
 /** Declared at module scope so it is not remounted on every render. */
 function ChartTooltip({ active, payload, label, unit }) {
@@ -77,10 +97,30 @@ export default function Analytics() {
       })
   }, [sessions, selectedExercise])
 
-  const volumeData = useMemo(
-    () => sessions.slice(-12).map(s => ({ date: s.date.slice(5), volume: Math.round(calcVolume(s)) })),
-    [sessions],
-  )
+  // Volume is grouped rather than one-bar-per-session. One bar per session means one bar
+  // per training day, so the chart filled up and recharts began thinning the axis labels
+  // until they no longer identified which bar was which. It also did slice(-12), which
+  // silently dropped the oldest sessions — so the chart disagreed with the History page.
+  //
+  // Week is the default: it is the granularity people think in, and it bounds the bar count
+  // by the calendar rather than by how often you train.
+  const [volumePeriod, setVolumePeriod] = useState('week')
+
+  const volumeData = useMemo(() => {
+    const buckets = volumeBuckets(sessions, volumePeriod)
+    return buckets.map((b, i) => ({
+      ...b,
+      volume: Math.round(b.volume),
+      // A bar opening a new month is labelled in full ("Oct 5"); the rest show the day alone,
+      // which is what makes a run of them readable. Every bar keeps its date for the
+      // tooltip regardless.
+      axis:
+        volumePeriod === 'session' && !startsNewMonth(b, buckets[i - 1])
+          ? b.label
+          : `${monthAbbr(b.date)} ${new Date(`${b.date}T00:00:00`).getDate()}`,
+      full: volumePeriod === 'session' ? formatDate(b.date) : `${b.sessions} session${b.sessions === 1 ? '' : 's'}`,
+    }))
+  }, [sessions, volumePeriod])
 
   const prs = useMemo(() => {
     const best = {}
@@ -192,21 +232,84 @@ export default function Analytics() {
           <section className="card" style={{ padding: 17, marginBottom: 8 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
               <Zap size={18} color="var(--primary)" />
-              <h2 style={{ fontSize: 'var(--type-headline)', fontWeight: 600, margin: 0 }}>Volume per Session</h2>
+              <h2 style={{ fontSize: 'var(--type-headline)', fontWeight: 600, margin: 0, flex: 1 }}>
+                Volume per {VOLUME_PERIODS.find(p => p.key === volumePeriod).label}
+              </h2>
+              <div
+                role="group"
+                aria-label="Volume period"
+                style={{ display: 'inline-flex', background: 'var(--fill)', borderRadius: 'var(--rounded-pill)', padding: 2 }}
+              >
+                {VOLUME_PERIODS.map(p => (
+                  <button
+                    key={p.key}
+                    onClick={() => setVolumePeriod(p.key)}
+                    aria-pressed={volumePeriod === p.key}
+                    style={{
+                      border: 0,
+                      background: volumePeriod === p.key ? 'var(--surface)' : 'transparent',
+                      color: volumePeriod === p.key ? 'var(--ink)' : 'var(--ink-muted)',
+                      fontSize: 'var(--type-fine)',
+                      fontWeight: volumePeriod === p.key ? 'var(--weight-semibold)' : 'var(--weight-regular)',
+                      padding: '5px 10px',
+                      borderRadius: 'var(--rounded-pill)',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {p.short}
+                  </button>
+                ))}
+              </div>
             </div>
-            <ResponsiveContainer width="100%" height={160}>
-              <BarChart data={volumeData} margin={{ top: 4, right: 8, left: -22, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke={c.grid} vertical={false} />
-                <XAxis dataKey="date" {...axisProps} />
-                <YAxis {...axisProps} width={40} />
-                <Tooltip content={<ChartTooltip unit="kg vol" />} cursor={{ fill: c.grid, opacity: 0.4 }} />
-                <Bar dataKey="volume" radius={[8, 8, 0, 0]} maxBarSize={28}>
-                  {volumeData.map((_, i) => (
-                    <Cell key={i} fill={i === volumeData.length - 1 ? c.series : c.muted} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
+            {/* Scrolls only when the bars genuinely do not fit. In session mode a long
+                history is wider than a phone, and scrolling beats thinning the axis until
+                the labels stop meaning anything. */}
+            <div className="vol-scroll">
+              <ResponsiveContainer width="100%" height={160}>
+                <BarChart data={volumeData} margin={{ top: 4, right: 8, left: -22, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={c.grid} vertical={false} />
+                  <XAxis dataKey="axis" {...axisProps} interval={0} angle={0} />
+                  <YAxis {...axisProps} width={40} />
+                  <Tooltip
+                    cursor={{ fill: c.grid, opacity: 0.4 }}
+                    content={({ active, payload }) =>
+                      active && payload?.length ? (
+                        <div
+                          style={{
+                            background: c.surface,
+                            border: `1px solid ${c.grid}`,
+                            borderRadius: 11,
+                            padding: '8px 12px',
+                            fontSize: 14,
+                            color: c.text,
+                          }}
+                        >
+                          <div style={{ color: c.axis, marginBottom: 2 }}>{formatDate(payload[0].payload.date)}</div>
+                          <div className="tnum" style={{ color: c.series, fontWeight: 600 }}>
+                            {payload[0].value.toLocaleString()} kg · {payload[0].payload.full}
+                          </div>
+                        </div>
+                      ) : null
+                    }
+                  />
+                  <Bar dataKey="volume" radius={[8, 8, 0, 0]} maxBarSize={28}>
+                    {volumeData.map((entry, i) => (
+                      <Cell
+                        key={i}
+                        fill={i === volumeData.length - 1 ? c.series : c.muted}
+                      />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+            {/* Say plainly how much of the history is on screen. The old chart hid the
+                oldest sessions without saying so. */}
+            <p style={{ fontSize: 'var(--type-fine)', color: 'var(--ink-muted)', margin: '10px 0 0' }}>
+              {volumePeriod === 'session'
+                ? `${volumeData.length} session${volumeData.length === 1 ? '' : 's'}, all of them`
+                : `${sessions.length} session${sessions.length === 1 ? '' : 's'} grouped · ${volumeData.filter(b => b.sessions > 0).length} with training`}
+            </p>
           </section>
 
           <PersonalRecords records={prs} />
