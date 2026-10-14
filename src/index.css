@@ -527,3 +527,11 @@ button:disabled {
 /* Stroke in the surface colour rather than a darker outline: it reads as a gap between
    muscles instead of a drawn border, which is what makes the silhouette legible. */
 .bm-v path { stroke: var(--surface); stroke-width: 2.5; stroke-linejoin: round }
+
+/* Volume chart. A long session history is wider than a phone, and scrolling beats letting
+   recharts thin the axis until the labels stop saying which bar is which. The min-width is
+   what makes overflow possible at all; without it the chart just squeezes. */
+.vol-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none }
+.vol-scroll::-webkit-scrollbar { display: none }
+.vol-scroll .recharts-responsive-container { min-width: 100% }
+.vol-scroll .recharts-cartesian-axis-tick-value { font-size: 10px }

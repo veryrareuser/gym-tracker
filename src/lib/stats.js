@@ -98,6 +98,122 @@ export function daysInMonths(months, now = new Date()) {
 }
 
 /**
+ * Training volume grouped into the buckets a bar chart can actually show.
+ *
+ * Per-session volume was the original chart, and it does not scale: one bar per session
+ * means one bar per training day, so a month of history fills the width and the axis starts
+ * thinning labels until it no longer says which bar is which. Grouping is the fix — the
+ * number of bars is bounded by the period, not by how often you train.
+ *
+ * `week` is the default because it is the granularity people actually think in. `month`
+ * answers "how am I trending". `session` keeps the original view for spotting a single
+ * heavy day, and is honest about its own crowding rather than silently dropping the
+ * oldest sessions — which is what it used to do, and which made the chart disagree with
+ * the History page.
+ *
+ * Empty periods are included as zero bars. A gap in training is the thing worth seeing,
+ * and leaving it out would draw a straight line through a break in the streak.
+ *
+ * @returns {Array<{key,label,volume,sets,sessions,count}>} ordered oldest first
+ */
+export function volumeBuckets(sessions, period = 'week', now = new Date()) {
+  const list = sessions || []
+  if (list.length === 0) return []
+
+  const byKey = new Map()
+  for (const s of list) {
+    let key
+    if (period === 'month') {
+      key = s.date.slice(0, 7)
+    } else if (period === 'session') {
+      // Keyed by session id, not date: you can train twice in a day, and two sessions on
+      // one date are two workouts. Keying on the date collapsed them into one bar, which is
+      // the same silent loss of data the chart was rebuilt to remove.
+      key = `s:${s.id}`
+    } else {
+      key = weekStartOfSession(s.date)
+    }
+    if (!key) continue
+    let b = byKey.get(key)
+    if (!b) {
+      b = { key, date: s.date, volume: 0, sets: 0, sessions: 0, labels: [] }
+      byKey.set(key, b)
+    }
+    b.volume += calcVolume(s)
+    b.sets += (s.exercise_logs || []).reduce((n, l) => n + (l.set_entries || []).length, 0)
+    b.sessions += 1
+    b.labels.push(s.date)
+  }
+
+  // Fill the gaps so a missed week is visible rather than compressed away.
+  if (period !== 'session') {
+    const stepDays = period === 'month' ? null : 7
+    const keys = [...byKey.keys()].sort()
+    const first = keys[0]
+    const last = currentPeriodKey(period, now)
+    if (stepDays) {
+      const cursor = new Date(`${first}T00:00:00`)
+      const end = new Date(`${last}T00:00:00`)
+      while (cursor <= end) {
+        const key = weekStartOfSession(localISODate(cursor))
+        if (!byKey.has(key)) byKey.set(key, { key, date: key, volume: 0, sets: 0, sessions: 0, labels: [] })
+        cursor.setDate(cursor.getDate() + stepDays)
+      }
+    } else {
+      const [fy, fm] = first.split('-').map(Number)
+      const [ty, tm] = last.split('-').map(Number)
+      let y = fy
+      let m = fm
+      while (y < ty || (y === ty && m <= tm)) {
+        const key = `${y}-${String(m).padStart(2, '0')}`
+        if (!byKey.has(key)) byKey.set(key, { key, date: `${key}-01`, volume: 0, sets: 0, sessions: 0, labels: [] })
+        m += 1
+        if (m > 12) { m = 1; y += 1 }
+      }
+    }
+  }
+
+  return [...byKey.values()]
+    .sort((a, b) => (a.date === b.date ? a.key.localeCompare(b.key) : a.date.localeCompare(b.date)))
+    .map(b => ({ ...b, label: bucketLabel(b, period), count: b.labels.length }))
+}
+
+/** The bucket the current date falls into, used as the far edge of the range. */
+function currentPeriodKey(period, now) {
+  if (period === 'month') return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+  return weekStartOfSession(localISODate(now))
+}
+
+/**
+ * Axis label for one bar.
+ *
+ * Session bars show a day number, switching to "Oct 2" when the month changes so a label
+ * is never ambiguous about which month it belongs to — the previous chart labelled every
+ * bar "09-21" style, which cannot distinguish years and cannot distinguish two sessions on
+ * the same day.
+ */
+function bucketLabel(bucket, period) {
+  const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+  const d = new Date(`${bucket.date}T00:00:00`)
+  if (period === 'month') return MONTHS[d.getMonth()]
+  if (period === 'week') return `${d.getDate()} ${MONTHS[d.getMonth()]}`
+  return String(d.getDate())
+}
+
+/**
+ * True when this bar is the first of a new month, so the caller can label it in full.
+ *
+ * Compares dates rather than keys: session bars are keyed by session id, which carries no
+ * month information. Accepts either a bucket or a plain date string for `previous`, since
+ * the natural call site has a bucket to hand.
+ */
+export function startsNewMonth(bucket, previous) {
+  if (!previous) return true
+  const previousDate = typeof previous === 'string' ? previous : previous.date
+  return bucket.date.slice(0, 7) !== previousDate.slice(0, 7)
+}
+
+/**
  * Bucket a value into one of five levels for the heatmap, against the busiest day.
  *
  * Scaled to the maximum present rather than to a fixed range, so a light week still shows
