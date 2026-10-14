@@ -32,9 +32,11 @@ const DEBOUNCE_MS = 3000
  * @returns {{ saving: boolean, lastSavedAt: number|null, failed: boolean }}
  */
 export default function useAutosave(session, { enabled = true } = {}) {
-  const [saving, setSaving] = useState(false)
+  // 'saving' | 'saved' | 'failed' | null. Distinct from `saving: boolean` because the UI
+  // must not claim success while the request is in flight.
+  const [state, setState] = useState(null)
   const [lastSavedAt, setLastSavedAt] = useState(null)
-  const [failed, setFailed] = useState(false)
+  const [error, setError] = useState(null)
 
   const timerRef = useRef(null)
   const inFlightRef = useRef(false)
@@ -61,18 +63,20 @@ export default function useAutosave(session, { enabled = true } = {}) {
     if (!hasContent) return
 
     inFlightRef.current = true
-    setSaving(true)
+    setState('saving')
     try {
       await saveSession(current, { draft: true })
       setLastSavedAt(Date.now())
-      setFailed(false)
-    } catch {
-      // No user-facing error: the local mirror still holds this workout, and the next
-      // trigger retries. A red banner mid-set helps nobody.
-      setFailed(true)
+      setError(null)
+      setState('saved')
+    } catch (err) {
+      // The failure is recorded and shown as "Not saved" rather than swallowed. Swallowing
+      // it is how this shipped broken: the chip read "Saved" because it showed during the
+      // attempt, so a write that never landed looked identical to one that did.
+      setError(err)
+      setState('failed')
     } finally {
       inFlightRef.current = false
-      setSaving(false)
     }
   }, [enabled])
 
@@ -109,5 +113,5 @@ export default function useAutosave(session, { enabled = true } = {}) {
     }
   }, [enabled, flush])
 
-  return { saving, lastSavedAt, failed }
+  return { state, saving: state === 'saving', saved: state === 'saved', failed: state === 'failed', lastSavedAt, error }
 }
