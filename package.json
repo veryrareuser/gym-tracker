@@ -25,6 +25,7 @@
     "verify:drafts": "node scripts/lib/draft-isolation.test.mjs",
     "verify:restore": "node scripts/lib/draft-restore.test.mjs",
     "verify:buckets": "node scripts/lib/volume-buckets.test.mjs",
+    "verify:pwa": "node scripts/lib/pwa-assets.test.mjs",
     "verify:date-default": "node scripts/verify-date-default.mjs"
   },
   "dependencies": {
@@ -43,7 +44,7 @@
     "@vitejs/plugin-react": "6.1.1",
     "gh-pages": "6.1.1",
     "oxlint": "1.87.0",
-    "vite": "8.3.0"
+    "vite": "8.3.6"
   },
   "overrides": {
     "source-map-js": "1.2.2"
