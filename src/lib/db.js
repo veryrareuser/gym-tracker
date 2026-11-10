@@ -504,17 +504,23 @@ export async function saveSession(session, { draft = false } = {}) {
 
   // 1. Session header.
   //
-  // duration_seconds is the measured length of the workout and is written on the final
-  // save. started_at is when the stopwatch began, and rides along on the draft so the
-  // timer survives the tab closing, the app being killed, and signing out.
+  // duration_seconds and started_at carry the measurement, and they carry two
+  // different halves of it:
+  //
+  //   duration_seconds   the time already counted, from segments that have finished
+  //   started_at         when the current segment began, null when not counting
+  //
+  // so the elapsed time is recoverable from the pair alone:
+  //
+  //   elapsed = duration_seconds + (started_at ? now - started_at : 0)
   //
   // duration_seconds is written whenever it is known, including null — clearing it
   // is how a user says "this workout was never timed".
   //
-  // started_at is only written when there is one. The edit form does not know the
-  // original start instant, so it sends null, and writing that null would erase the
-  // record of when the workout began. Leaving the column out of the upsert keeps
-  // whatever was there.
+  // started_at is written whenever it is known, including null, which is how a paused
+  // measurement says "no segment is counting". A field that is absent from the payload
+  // is left exactly as it was, which is what the edit form wants: it does not know the
+  // row's own start instant and must not erase it.
   const header = {
     id: session.id,
     date: session.date,
@@ -523,7 +529,7 @@ export async function saveSession(session, { draft = false } = {}) {
     is_draft: draft,
   }
   if (session.duration_seconds !== undefined) header.duration_seconds = session.duration_seconds
-  if (session.started_at) header.started_at = session.started_at
+  if (session.started_at !== undefined) header.started_at = session.started_at
   unwrap(
     await supabase.from('workout_sessions').upsert(header),
     `save session ${session.id}`,

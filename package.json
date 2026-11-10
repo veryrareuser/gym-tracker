@@ -20,6 +20,7 @@
     "verify:dates": "node scripts/lib/date-helpers.test.mjs",
     "verify:storage": "node scripts/lib/browser-session.test.mjs",
     "verify:duration": "node scripts/lib/duration.test.mjs",
+    "verify:stopwatch-unit": "node scripts/lib/stopwatch.test.mjs",
     "verify:duration-db": "node scripts/verify-duration.mjs",
     "verify:cache": "node scripts/lib/read-cache.test.mjs",
     "verify:sw": "node scripts/verify-sw.mjs",
