@@ -1,11 +1,11 @@
 // src/pages/LogWorkout.jsx
 import { useEffect, useMemo, useState, useRef } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { Plus, Trash2, ChevronDown, ChevronUp, Check, ArrowLeft, RotateCcw, Timer, CircleAlert, Dumbbell } from 'lucide-react'
-import { getExercises, getSessions, getDraft, discardDraft, saveExercise, saveSession } from '../lib/db'
-import { generateId, todayISO, formatDate } from '../lib/utils'
+import { Plus, Trash2, ChevronDown, ChevronUp, Check, ArrowLeft, RotateCcw, Clock, CircleAlert, Dumbbell } from 'lucide-react'
+import { getExercises, getSession, getDraft, discardDraft, saveExercise, saveSession } from '../lib/db'
+import { generateId, todayISO, formatDate, formatDuration, formatStopwatch } from '../lib/utils'
 import { imageUrl } from '../lib/exerciseDb'
-import { startTimer } from '../lib/timer'
+import { startStopwatch, resumeStopwatch, stopStopwatch, elapsedSeconds } from '../lib/stopwatch'
 import useAutosave from '../lib/useAutosave'
 import { mergeWithLibrary } from '../lib/draft'
 import { currentUserId } from '../lib/auth'
@@ -24,7 +24,6 @@ const draftKey = () => `gym_draft:${currentUserId() ?? 'anon'}`
 // so sign-out and the legacy sweep clear it too, instead of stranding it on a shared
 // device. Local-first restore is in `load()` below.
 const draftBackupKey = () => `gym_draft:backup:${currentUserId() ?? 'anon'}`
-const REST_OPTIONS = [60, 90, 120, 180]
 
 // The mirror is best-effort. localStorage throws outright in some restricted
 // browsing modes, and an unguarded throw here would take the sessionStorage draft
@@ -71,7 +70,6 @@ export default function LogWorkout() {
   const [saveError, setSaveError] = useState(null)
   const [sessionNotes, setSessionNotes] = useState('')
   const [hasDraft, setHasDraft] = useState(false)
-  const [restDuration, setRestDuration] = useState(90)
   const [showPicker, setShowPicker] = useState(false)
   const isEditMode = Boolean(sessionId)
   // Prevents the draft effect from writing an empty draft during the async load.
@@ -79,6 +77,33 @@ export default function LogWorkout() {
   // Autosave resumes a cloud draft under its own id, so this is state, not a constant
   // initialised from the route. Editing an existing session must keep that session's id.
   const [currentSessionId, setCurrentSessionId] = useState(() => sessionId || generateId())
+  // The id this page was opened with.
+  //
+  // The load effect needs it, and it must not depend on currentSessionId: the effect
+  // itself replaces that id when a cloud draft is restored, so listing it as a dependency
+  // would re-run the load and re-fetch the draft it just restored. A ref captures the
+  // opening value once, which is what the effect means by "the session I am opening".
+  const openingSessionIdRef = useRef(currentSessionId)
+  // When the workout started, in epoch milliseconds. Null until the load resolves,
+  // because the start instant depends on which draft was restored.
+  const [startedAt, setStartedAt] = useState(null)
+  // The measured length of the session, in seconds. Set on save; the field below lets
+  // it be corrected by hand, which is the only way to time a workout that was not
+  // measured — a session logged from memory, or one whose draft was lost.
+  const [durationSeconds, setDurationSeconds] = useState(null)
+  // A duration typed in by hand: the hours and the minutes, as separate fields.
+  //
+  // Two fields rather than one number, because that is what a person is entering —
+  // "an hour and a half" is two numbers. Null means "not entered", so the measured
+  // elapsed time is used instead.
+  //
+  // They are kept apart rather than stored as one duration in seconds. Sharing a
+  // single value between the two inputs means each keystroke has to recompute the
+  // other one from the value it is replacing, and the two can overwrite each other:
+  // setting the hours while the minutes field has not been read yet quietly throws
+  // the minutes away.
+  const [durationHours, setDurationHours] = useState(null)
+  const [durationMinutes, setDurationMinutes] = useState(null)
 
   useEffect(() => {
     let cancelled = false
@@ -88,12 +113,22 @@ export default function LogWorkout() {
       setExercises(exs)
 
       if (isEditMode) {
-        const sessions = await getSessions()
+        // Only the one session being edited. This used to load every session in the
+        // account and pick one out of the result, which on a phone meant downloading
+        // 176 KB of other workouts to change this one.
+        const existing = await getSession(sessionId)
         if (cancelled) return
-        const existing = sessions.find(s => s.id === sessionId)
         if (existing) {
           setDate(existing.date)
           setSessionNotes(existing.notes || '')
+          const recorded = Number.isFinite(existing.duration_seconds) ? existing.duration_seconds : null
+          setDurationSeconds(recorded)
+          // The fields are pre-filled with the recorded duration rather than left
+          // blank. A workout that was measured should open its editor showing that
+          // measurement — otherwise the number is hidden behind an empty box, and
+          // saving would replace it with whatever the fields happened to say.
+          setDurationHours(recorded === null ? null : Math.floor(recorded / 3600))
+          setDurationMinutes(recorded === null ? null : Math.floor((recorded % 3600) / 60))
           setLogs(
             (existing.exercise_logs || []).map(log => {
               const ex = exs.find(e => e.id === log.exercise_id)
@@ -130,6 +165,9 @@ export default function LogWorkout() {
         // back, empty ones included, which is what you were looking at when you left.
         setLogs(mergeWithLibrary(exs, cloud.exercise_logs, generateId))
         setHasDraft(true)
+        // The draft carries when the workout started, so the timer resumes at the same
+        // instant it was at rather than starting over.
+        setStartedAt(resumeStopwatch(currentUserId(), cloud.id, cloud.started_at))
         loadedRef.current = true
         return
       }
@@ -146,6 +184,9 @@ export default function LogWorkout() {
           // keeps both paths consistent.
           setLogs(mergeWithLibrary(exs, draft.logs, generateId))
           setHasDraft(true)
+          // The local mirror keeps the start instant too, so a reload in the middle of a
+          // workout does not restart the clock.
+          setStartedAt(resumeStopwatch(currentUserId(), openingSessionIdRef.current, draft.startedAt))
           loadedRef.current = true
           return
         } catch {
@@ -155,6 +196,8 @@ export default function LogWorkout() {
       }
 
       setLogs(exs.map((ex, i) => emptyLog(ex, i)))
+      // A brand new workout starts its clock now.
+      setStartedAt(startStopwatch(currentUserId(), openingSessionIdRef.current))
       loadedRef.current = true
     }
     load()
@@ -176,7 +219,8 @@ export default function LogWorkout() {
     const hasContent =
       logs.some(l => l.set_entries.some(s => s.weight || s.reps)) || sessionNotes.trim().length > 0
     if (hasContent) {
-      const payload = JSON.stringify({ logs, date, sessionNotes })
+      // startedAt rides along so a restored draft resumes the clock where it was.
+      const payload = JSON.stringify({ logs, date, sessionNotes, startedAt })
       sessionStorage.setItem(draftKey(), payload)
       mirrorDraft('set', payload)
     } else {
@@ -184,7 +228,7 @@ export default function LogWorkout() {
       mirrorDraft('clear')
     }
     setHasDraft(hasContent)
-  }, [logs, date, sessionNotes, isEditMode])
+  }, [logs, date, sessionNotes, startedAt, isEditMode])
 
   // Warn before the window closes or reloads with an unsaved workout.
   //
@@ -213,18 +257,28 @@ export default function LogWorkout() {
     setHasDraft(false)
     setDate(todayISO())
     setSessionNotes('')
-    setCurrentSessionId(generateId())
+    setDurationHours(null)
+    setDurationMinutes(null)
+    const fresh = generateId()
+    setCurrentSessionId(fresh)
     setLogs(exercises.map((ex, i) => emptyLog(ex, i)))
+    // The abandoned workout's clock goes with it, and the next one starts fresh.
+    stopStopwatch(currentUserId())
+    setStartedAt(startStopwatch(currentUserId(), fresh))
   }
 
   // What autosave writes. Same shape handleSave builds, minus the filtering that only
   // makes sense at commit time: a draft keeps every set the user has typed, including
   // half-filled ones, because that is the state being protected.
+  //
+  // started_at is included so the cloud draft knows when the workout began, which is
+  // what lets the timer continue on another device.
   const autosaveSession = useMemo(
     () => ({
       id: currentSessionId,
       date,
       notes: sessionNotes,
+      started_at: startedAt ? new Date(startedAt).toISOString() : null,
       exercise_logs: logs
         .filter(log => log.set_entries.some(s => s.weight || s.reps))
         .map((log, i) => ({
@@ -236,7 +290,7 @@ export default function LogWorkout() {
             .map(s => ({ ...s, exercise_log_id: log.id })),
         })),
     }),
-    [currentSessionId, date, sessionNotes, logs],
+    [currentSessionId, date, sessionNotes, startedAt, logs],
   )
 
   // Autosave runs for new sessions only. Editing a saved workout is a deliberate, brief
@@ -311,10 +365,25 @@ export default function LogWorkout() {
   async function handleSave() {
     setSaving(true)
     setSaveError(null)
+    // How long the workout took, measured from the moment it started.
+    //
+    // The hand-entered value wins when there is one: it is how a workout that was not
+    // timed gets a duration at all. Otherwise the measured elapsed time is used, which
+    // is correct even when the app was closed for part of the session, because the
+    // elapsed time comes from the clock rather than from ticks.
+    const measured = startedAt ? elapsedSeconds(startedAt) : null
+    // Either field being filled in means a duration was entered. Both are read, so
+    // setting the hours and leaving the minutes alone gives an exact number of hours.
+    const entered = durationHours !== null || durationMinutes !== null
+    const duration = entered
+      ? (durationHours || 0) * 3600 + (durationMinutes || 0) * 60
+      : measured
     const session = {
       id: currentSessionId,
       date,
       notes: sessionNotes,
+      duration_seconds: duration,
+      started_at: startedAt ? new Date(startedAt).toISOString() : null,
       exercise_logs: logs
         .filter(log => log.set_entries.some(s => s.weight || s.reps))
         .map((log, i) => ({
@@ -332,6 +401,10 @@ export default function LogWorkout() {
       await saveSession(session, { draft: false })
       sessionStorage.removeItem(draftKey())
       mirrorDraft('clear')
+      // The workout is over, so the clock stops. Clearing it here rather than on
+      // unmount means leaving the page without saving keeps the timer running, which
+      // is the behaviour that was asked for.
+      stopStopwatch(currentUserId())
       navigate('/history')
     } catch (err) {
       setSaveError(`Could not save this session: ${err.message}`)
@@ -416,22 +489,53 @@ export default function LogWorkout() {
         </div>
       </div>
 
-      {/* Rest duration */}
+      {/* Session time.
+          The live readout while logging, and the editable field when editing a session
+          that was already saved. One place for both, because it is the same fact: how
+          long this workout took. */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
-        <Timer size={15} color="var(--ink-muted)" />
-        <span style={{ fontSize: 'var(--type-subhead)', color: 'var(--ink-muted)' }}>Rest</span>
-        {REST_OPTIONS.map(s => (
-          <button
-            key={s}
-            onClick={() => setRestDuration(s)}
-            aria-pressed={restDuration === s}
-            className="chip"
-            data-selected={restDuration === s}
-            style={{ minHeight: 30 }}
-          >
-            {s}s
-          </button>
-        ))}
+        <Clock size={15} color="var(--ink-muted)" />
+        <span style={{ fontSize: 'var(--type-subhead)', color: 'var(--ink-muted)' }}>Session time</span>
+
+        {isEditMode ? (
+          <>
+            <input
+              type="number"
+              inputMode="numeric"
+              min="0"
+              max="24"
+              placeholder="h"
+              aria-label="Duration in hours"
+              value={durationHours === null ? '' : durationHours}
+              onChange={e => setDurationHours(e.target.value === '' ? null : Number(e.target.value))}
+              className="tnum"
+              style={{ width: 64, textAlign: 'center', padding: '8px 6px' }}
+            />
+            <span style={{ color: 'var(--ink-muted)', fontSize: 'var(--type-subhead)' }}>h</span>
+            <input
+              type="number"
+              inputMode="numeric"
+              min="0"
+              max="59"
+              placeholder="m"
+              aria-label="Duration in minutes"
+              value={durationMinutes === null ? '' : durationMinutes}
+              onChange={e => setDurationMinutes(e.target.value === '' ? null : Number(e.target.value))}
+              className="tnum"
+              style={{ width: 64, textAlign: 'center', padding: '8px 6px' }}
+            />
+            <span style={{ color: 'var(--ink-muted)', fontSize: 'var(--type-subhead)' }}>m</span>
+            {durationHours === null && durationMinutes === null && durationSeconds !== null && (
+              <span style={{ fontSize: 'var(--type-fine)', color: 'var(--ink-muted)' }}>
+                recorded {formatDuration(durationSeconds)}
+              </span>
+            )}
+          </>
+        ) : (
+          <span style={{ fontSize: 'var(--type-title)', fontWeight: 600, color: 'var(--ink)' }}>
+            <LiveClock startedAt={startedAt} />
+          </span>
+        )}
       </div>
 
       {/* Exercise logs */}
@@ -499,12 +603,12 @@ export default function LogWorkout() {
                 <div
                   style={{
                     display: 'grid',
-                    gridTemplateColumns: '32px 1fr 1fr 44px 44px',
+                    gridTemplateColumns: '32px 1fr 1fr 44px',
                     gap: 4,
                     marginBottom: 6,
                   }}
                 >
-                  {['Set', 'kg', 'Reps', '', ''].map((label, i) => (
+                  {['Set', 'kg', 'Reps', ''].map((label, i) => (
                     <div
                       key={i}
                       style={{
@@ -528,7 +632,7 @@ export default function LogWorkout() {
                       key={set.id}
                       style={{
                         display: 'grid',
-                        gridTemplateColumns: '32px 1fr 1fr 44px 44px',
+                        gridTemplateColumns: '32px 1fr 1fr 44px',
                         gap: 4,
                         marginBottom: 4,
                         alignItems: 'center',
@@ -571,13 +675,6 @@ export default function LogWorkout() {
                         className="tnum"
                         style={{ textAlign: 'center', padding: '11px 6px' }}
                       />
-                      <button
-                        onClick={() => startTimer(restDuration)}
-                        aria-label={`Start ${restDuration} second rest`}
-                        className="btn-icon"
-                      >
-                        <Timer size={17} color="var(--ink-muted)" />
-                      </button>
                       <button
                         onClick={() => removeSet(log.id, set.id)}
                         aria-label={`Remove set ${set.set_number}`}
@@ -666,4 +763,40 @@ export default function LogWorkout() {
 
 function titleCase(value) {
   return value ? value.charAt(0).toUpperCase() + value.slice(1) : ''
+}
+
+/**
+ * The running clock.
+ *
+ * It re-renders once a second so the number moves, but the value it shows is always
+ * derived from the start instant rather than accumulated from ticks. That is what makes
+ * it keep counting when the tab is hidden or the app is closed: coming back after ten
+ * minutes shows ten minutes more, not zero.
+ */
+function LiveClock({ startedAt }) {
+  const [now, setNow] = useState(() => Date.now())
+
+  useEffect(() => {
+    if (!startedAt) return undefined
+    // A backgrounded tab throttles its timers, so the interval is a nudge to re-read the
+    // clock rather than the thing that counts. One second is enough for a display that
+    // only shows minutes.
+    const id = setInterval(() => setNow(Date.now()), 1000)
+    // Coming back to the tab should show the right time immediately, not up to a second
+    // later.
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') setNow(Date.now())
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      clearInterval(id)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
+  }, [startedAt])
+
+  if (!startedAt) return null
+  // formatStopwatch, not formatDuration: this is a running counter, so it shows seconds
+  // and reads as mm:ss the way a phone's own timer does. formatDuration drops the
+  // seconds once a minute is reached, which would make the clock look stuck.
+  return <span className="tnum">{formatStopwatch(now - startedAt)}</span>
 }

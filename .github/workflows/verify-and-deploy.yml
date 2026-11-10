@@ -26,6 +26,8 @@ jobs:
       - run: npm run lint
       - run: npm run verify:dates
       - run: npm run verify:storage
+      - run: npm run verify:duration
+      - run: npm run verify:cache
       - run: npm run verify:render
       - run: npm run verify:geometry
       - run: npm run verify:bodymap
@@ -34,6 +36,9 @@ jobs:
       - run: npm run verify:buckets
       - run: npm run build
       - run: npm run verify:pwa
+      # The service worker is checked in a real browser: that it registers, that it
+      # caches the shell and the built assets, and that it never caches the API.
+      - run: npm run verify:sw
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         with:

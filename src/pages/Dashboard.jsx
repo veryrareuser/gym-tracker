@@ -1,29 +1,31 @@
 // src/pages/Dashboard.jsx
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Dumbbell, Flame, TrendingUp, ChevronRight, Plus } from 'lucide-react'
-import { getSessions, getExercises } from '../lib/db'
-import { formatDate, calcVolume, todayISO } from '../lib/utils'
-import { weekStreak } from '../lib/stats'
+import { Dumbbell, Flame, TrendingUp, ChevronRight, Plus, Clock } from 'lucide-react'
+import { getSessionSummaries } from '../lib/db'
+import { formatDate, todayISO, formatHoursDecimal } from '../lib/utils'
+import { weekStreak, totalDurationSeconds } from '../lib/stats'
 
 export default function Dashboard() {
   const [sessions, setSessions] = useState([])
-  const [exercises, setExercises] = useState([])
-  // Captured once, on mount. Reading the clock during render is an impurity: the value
+  // Captured once on mount. Reading the clock during render is an impurity: the value
   // would change on every re-render, and React is free to re-render at any time, so the
   // greeting could disagree with the "logged today" check computed further down.
   const [today] = useState(() => new Date())
   const navigate = useNavigate()
 
   useEffect(() => {
-    getSessions().then(setSessions)
-    getExercises().then(setExercises)
+    // The summaries, not the full session trees. The dashboard shows a date, a volume and
+    // a few exercise names; shipping every set of every session to draw that is 176 KB
+    // of data the page never reads.
+    getSessionSummaries().then(setSessions)
   }, [])
 
   const lastSession = sessions[0]
   const loggedToday = lastSession?.date === todayISO()
 
   const streak = weekStreak(sessions)
+  const totalHours = formatHoursDecimal(totalDurationSeconds(sessions))
 
   const stats = [
     {
@@ -36,9 +38,16 @@ export default function Dashboard() {
     { label: 'Sessions', value: sessions.length, unit: 'total', icon: Dumbbell, color: 'var(--primary)' },
     {
       label: 'Last Volume',
-      value: lastSession ? Math.round(calcVolume(lastSession)) : 0,
+      value: lastSession ? Math.round(lastSession.volume) : 0,
       unit: 'kg',
       icon: TrendingUp,
+      color: 'var(--primary)',
+    },
+    {
+      label: 'Time',
+      value: totalHours,
+      unit: 'hours',
+      icon: Clock,
       color: 'var(--primary)',
     },
   ]
@@ -52,7 +61,7 @@ export default function Dashboard() {
         <h1 className="screen-title">{loggedToday ? 'Session logged' : 'Ready to train?'}</h1>
       </header>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 24 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8, marginBottom: 24 }}>
         {stats.map(({ label, value, unit, icon: Icon, color }) => (
           <div key={label} className="card" style={{ padding: '17px 8px', textAlign: 'center' }}>
             <Icon size={19} color={color} style={{ marginBottom: 8 }} aria-hidden="true" />
@@ -93,29 +102,25 @@ export default function Dashboard() {
               <div>
                 <div style={{ fontWeight: 600, fontSize: 'var(--type-headline)', letterSpacing: 'var(--tracking-headline)' }}>{formatDate(lastSession.date)}</div>
                 <div style={{ color: 'var(--ink-muted)', fontSize: 'var(--type-subhead)' }}>
-                  {lastSession.exercise_logs?.length || 0} exercises
+                  {lastSession.exercise_count || 0} exercises
                 </div>
               </div>
               <div style={{ textAlign: 'right' }}>
                 <div className="tnum" style={{ fontWeight: 600, color: 'var(--primary)' }}>
-                  {Math.round(calcVolume(lastSession))} kg
+                  {Math.round(lastSession.volume)} kg
                 </div>
                 <div style={{ color: 'var(--ink-muted)', fontSize: 'var(--type-fine)' }}>volume</div>
               </div>
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-              {(lastSession.exercise_logs || []).slice(0, 5).map(log => {
-                const name = exercises.find(e => e.id === log.exercise_id)?.name
-                if (!name) return null
-                return (
-                  <span key={log.id} className="chip" style={{ textTransform: 'none' }}>
-                    {name}
-                  </span>
-                )
-              })}
-              {(lastSession.exercise_logs?.length || 0) > 5 && (
+              {(lastSession.exercise_names || []).slice(0, 5).map((name, i) => (
+                <span key={`${name}-${i}`} className="chip" style={{ textTransform: 'none' }}>
+                  {name}
+                </span>
+              ))}
+              {(lastSession.exercise_names || []).length > 5 && (
                 <span style={{ fontSize: 'var(--type-subhead)', color: 'var(--ink-muted)', alignSelf: 'center' }}>
-                  +{lastSession.exercise_logs.length - 5} more
+                  +{lastSession.exercise_names.length - 5} more
                 </span>
               )}
             </div>

@@ -4,7 +4,7 @@ import { clearBrowserData, removeLegacyData } from '../../src/lib/browserSession
 function storage() {
   const value = {
     unrelated: 'keep',
-    gym_timer: 'keep',
+    gym_stopwatch: 'keep',
     gym_token: 'fixture',
     // Pre-namespacing leftovers, which the sweep exists to remove.
     sessions: 'fixture',
@@ -41,21 +41,26 @@ assert.equal(localStorage.exercises, undefined, 'legacy exercises key is removed
 assert.equal(localStorage.gym_sessions, undefined, 'legacy gym_sessions key is removed')
 assert.equal(localStorage.gym_exercises, undefined, 'legacy gym_exercises key is removed')
 
-// Namespaced caches and the rest timer are not legacy and must survive a reload.
+// Namespaced caches and the stopwatch are not legacy and must survive a reload.
 assert.equal(localStorage['sessions:fixture'], 'fixture', 'a namespaced session cache survives')
 assert.equal(localStorage['exercises:fixture'], 'fixture', 'a namespaced exercise cache survives')
-assert.equal(localStorage.gym_timer, 'keep', 'the rest timer survives')
+assert.equal(localStorage.gym_stopwatch, 'keep', 'the stopwatch survives a reload')
 assert.equal(localStorage.unrelated, 'keep', 'unrelated keys survive')
 assert.equal(sessionStorage.gym_token, 'fixture', 'the sweep touches localStorage only')
 
 // Sign-out is different: it wipes everything, drafts included, so the next person at the
 // keyboard does not inherit a half-finished workout.
+//
+// The stopwatch is the one deliberate exception, and it is outside APP_KEY. A workout's
+// length belongs to the workout, and the user asked for the clock to keep counting until
+// the session is saved — "not just when visible, even when I logged out". Signing out
+// must not shorten a session that is still going.
 clearBrowserData()
 for (const value of [localStorage, sessionStorage]) {
   assert.deepEqual(
     Object.keys(value).sort(),
-    ['gym_timer', 'unrelated'],
-    'sign-out clears every app key from both stores',
+    ['gym_stopwatch', 'unrelated'],
+    'sign-out clears every app key from both stores, except the stopwatch',
   )
 }
 

@@ -5,7 +5,42 @@
 // Every function here reads from the session list the data layer already hands us and
 // returns a number. Nothing talks to storage, and nothing writes.
 
-import { calcVolume, localISODate, monthStartISO, weekStartISO, weekStartOfSession } from './utils'
+// The extension is deliberate: it lets plain node load this file directly, the way
+// draft.js can, so the duration arithmetic can be tested without a bundler. Vite
+// resolves both forms.
+import { calcVolume, localISODate, monthStartISO, weekStartISO, weekStartOfSession } from './utils.js'
+
+/**
+ * The total time spent training, in seconds.
+ *
+ * Only sessions that carry a measurement count. A session logged before the stopwatch
+ * existed has no duration, and treating it as zero would quietly understate the
+ * total; treating it as anything else would invent a number. Both are wrong, so the
+ * honest answer is to sum what was actually measured.
+ */
+export function totalDurationSeconds(sessions) {
+  return (sessions || []).reduce((total, s) => total + (s.duration_seconds || 0), 0)
+}
+
+/**
+ * The number of sessions that carry a measured duration.
+ *
+ * The denominator for an average. A session with no duration is not a zero-length
+ * workout, so it must not drag the average down.
+ */
+export function measuredSessionCount(sessions) {
+  return (sessions || []).filter(s => Number.isFinite(s.duration_seconds)).length
+}
+
+/**
+ * The average measured session length, in seconds, or null when nothing was measured.
+ */
+export function averageDurationSeconds(sessions) {
+  const count = measuredSessionCount(sessions)
+  if (count === 0) return null
+  return Math.round(totalDurationSeconds(sessions) / count)
+}
+
 
 /** Sessions in the device's current calendar month. */
 export function sessionsThisMonth(sessions, now = new Date()) {
