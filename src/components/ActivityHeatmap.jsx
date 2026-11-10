@@ -93,28 +93,9 @@ export default function ActivityHeatmap({ sessions }) {
     <section className="card" style={{ padding: 17, marginBottom: 8 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 14 }}>
         <h2 style={{ fontSize: 'var(--type-headline)', fontWeight: 600, margin: 0 }}>Activity</h2>
-        <div
-          role="group"
-          aria-label="Heatmap metric"
-          style={{ display: 'inline-flex', background: 'var(--fill)', borderRadius: 'var(--rounded-pill)', padding: 2 }}
-        >
+        <div role="group" aria-label="Heatmap metric" className="segmented">
           {['sessions', 'volume'].map(m => (
-            <button
-              key={m}
-              onClick={() => setMode(m)}
-              aria-pressed={mode === m}
-              style={{
-                border: 0,
-                background: mode === m ? 'var(--surface)' : 'transparent',
-                color: mode === m ? 'var(--ink)' : 'var(--ink-muted)',
-                fontSize: 'var(--type-fine)',
-                fontWeight: mode === m ? 'var(--weight-semibold)' : 'var(--weight-regular)',
-                padding: '5px 11px',
-                borderRadius: 'var(--rounded-pill)',
-                cursor: 'pointer',
-                textTransform: 'capitalize',
-              }}
-            >
+            <button key={m} onClick={() => setMode(m)} aria-pressed={mode === m}>
               {m}
             </button>
           ))}

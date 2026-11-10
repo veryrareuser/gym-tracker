@@ -35,7 +35,7 @@ export default function AccountSecurity({ onClose }) {
 
   return createPortal(
     <dialog ref={dialog} onClose={onClose} aria-labelledby="account-security-title"
-      style={{ margin: 'auto', maxWidth: 360, width: 'calc(100% - 34px)', padding: 24, border: '1px solid var(--line)', borderRadius: 'var(--rounded-lg)', background: 'var(--surface)', color: 'var(--ink)' }}>
+      style={{ margin: 'auto', maxWidth: 360, width: 'calc(100% - 34px)', padding: 24, border: '4px solid var(--outline)', borderRadius: 0, boxShadow: '8px 8px 0 var(--outline)', background: 'var(--surface)', color: 'var(--ink)' }}>
       <h2 id="account-security-title" style={{ fontSize: 'var(--type-headline)', marginBottom: 12 }}>Account security</h2>
       <form onSubmit={submit}>
         <label htmlFor="security-current">Current password</label>

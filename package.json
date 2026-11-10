@@ -9,6 +9,7 @@
     "lint": "oxlint",
     "preview": "vite preview",
     "gen:exercises": "node scripts/build-exercise-index.mjs",
+    "gen:icons": "node scripts/gen-icons.mjs",
     "backup": "node scripts/backup.mjs",
     "account": "node scripts/create-account.mjs",
     "verify:lockdown": "node scripts/verify-lockdown.mjs",

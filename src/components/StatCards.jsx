@@ -19,29 +19,27 @@ export default function StatCards({ sessions }) {
   const streak = weekStreak(sessions)
 
   const cards = [
-    { label: 'Workouts', value: sessions.length, unit: 'total', icon: Dumbbell, color: 'var(--primary)' },
-    { label: 'This month', value: thisMonth, unit: 'sessions', icon: CalendarDays, color: 'var(--primary)' },
+    { label: 'Workouts', value: sessions.length, unit: 'total', icon: Dumbbell },
+    { label: 'This month', value: thisMonth, unit: 'sessions', icon: CalendarDays },
     {
       label: 'Streak',
       value: streak,
       unit: streak === 1 ? 'week' : 'weeks',
       icon: Flame,
-      color: 'var(--ink)',
     },
     {
       label: 'Volume 30d',
       value: Math.round(volume30),
       unit: 'kg',
       icon: TrendingUp,
-      color: 'var(--primary)',
     },
   ]
 
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, marginBottom: 8 }}>
-      {cards.map(({ label, value, unit, icon: Icon, color }) => (
-        <div key={label} className="card" style={{ padding: '15px 6px', textAlign: 'center' }}>
-          <Icon size={17} color={color} style={{ marginBottom: 7 }} aria-hidden="true" />
+      {cards.map(({ label, value, unit, icon: Icon }) => (
+        <div key={label} className="card card-accent" style={{ padding: '15px 6px', textAlign: 'center' }}>
+          <Icon size={17} color="var(--nb-black)" style={{ marginBottom: 7 }} aria-hidden="true" />
           <div
             className="tnum"
             style={{

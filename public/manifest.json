@@ -6,8 +6,8 @@
   "start_url": "/gym-tracker/",
   "scope": "/gym-tracker/",
   "display": "standalone",
-  "background_color": "#f5f5f7",
-  "theme_color": "#f5f5f7",
+  "background_color": "#FFFBEB",
+  "theme_color": "#FFFBEB",
   "icons": [
     {
       "src": "/gym-tracker/icons/icon-192.png",

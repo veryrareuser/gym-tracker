@@ -25,31 +25,36 @@ export function useColorScheme() {
 }
 
 /**
- * Chart palette per appearance, drawn from the DESIGN.md token set.
+ * Chart palette per appearance, drawn from the design tokens.
  *
  * SVG presentation attributes cannot read CSS custom properties, so the values are
  * duplicated here as literals. `muted` is the one deliberate choice: the previous
  * near-surface greys were 1.71:1 in light and 1.50:1 in dark, which made the
  * de-emphasised historical bars effectively invisible. De-emphasis is now carried
  * by bar width and fill opacity over the series hue, so the bars stay legible.
+ *
+ * The light series colour is the darkened accent (#1565c0), not the palette's
+ * brighter #2196f3: a chart label has to be readable, and the bright blue is only
+ * 3.13:1 on white. In dark mode the accent is the light blue, which is 9.5:1 on
+ * the dark canvas.
  */
 export const CHART_COLORS = {
   light: {
-    grid: 'rgba(0, 0, 0, 0.08)',
-    axis: '#333333',
-    series: '#0066cc',
-    accent: '#0066cc',
-    muted: '#0066cc',
+    grid: 'rgba(0, 0, 0, 0.14)',
+    axis: '#000000',
+    series: '#1565c0',
+    accent: '#1565c0',
+    muted: '#1565c0',
     surface: '#ffffff',
-    text: '#1d1d1f',
+    text: '#000000',
   },
   dark: {
-    grid: 'rgba(255, 255, 255, 0.14)',
-    axis: '#cccccc',
-    series: '#2997ff',
-    accent: '#2997ff',
-    muted: '#2997ff',
-    surface: '#252527',
+    grid: 'rgba(255, 255, 255, 0.22)',
+    axis: '#ffffff',
+    series: '#64b5f6',
+    accent: '#64b5f6',
+    muted: '#64b5f6',
+    surface: '#1a1a1a',
     text: '#ffffff',
   },
 }

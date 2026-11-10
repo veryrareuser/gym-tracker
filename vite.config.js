@@ -46,9 +46,12 @@ function gymServiceWorker() {
         `${base}exercises-index.json`,
       ]
 
-      // The built assets: the JavaScript and CSS the shell loads.
+      // The built assets: the JavaScript and CSS the shell loads, and the font files.
+      // The fonts are precached because they are what the first line of text needs —
+      // without them the first paint is in the fallback face and then swaps, which is
+      // exactly the flash a PWA should not have.
       const assets = [
-        ...readAssetNames(outDir, 'assets', /\.(js|css)$/),
+        ...readAssetNames(outDir, 'assets', /\.(js|css|woff2)$/),
       ].map(name => `${base}${name}`)
 
       const precache = [...new Set([...shell, ...assets])]

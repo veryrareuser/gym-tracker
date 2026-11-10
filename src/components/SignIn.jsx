@@ -59,15 +59,17 @@ export default function SignIn({ onSignedIn, notice }) {
           style={{
             width: 72,
             height: 72,
-            borderRadius: 'var(--rounded-pill)',
-            background: 'var(--primary-wash)',
+            borderRadius: 0,
+            background: 'var(--nb-yellow)',
+            border: '4px solid var(--outline)',
+            boxShadow: '6px 6px 0 var(--outline)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             margin: '0 auto 24px',
           }}
         >
-          <Lock size={30} color="var(--primary)" />
+          <Lock size={30} color="var(--nb-black)" strokeWidth={2.5} />
         </div>
 
         <h1 className="screen-title" style={{ fontSize: 'var(--type-title)', marginBottom: 8, textAlign: 'center' }}>
