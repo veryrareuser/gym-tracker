@@ -6,6 +6,7 @@ import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
 const TEMPLATE = fileURLToPath(new URL('./scripts/service-worker.template.js', import.meta.url))
+const PUBLIC_DIR = fileURLToPath(new URL('./public', import.meta.url))
 
 /**
  * Writes the service worker with the list of built assets inlined.
@@ -33,17 +34,19 @@ function gymServiceWorker() {
     },
     closeBundle() {
       // The shell: the files that must be there for the app to boot at all.
+      //
+      // The icons and the favicon are discovered rather than listed. Their filenames
+      // carry a hash of the mark, so a phone which cached the old icon asks for the
+      // new one — which means the filenames are not constants, and a list written out
+      // here would quietly point at files that no longer exist.
       const shell = [
         `${base}`,
         `${base}manifest.json`,
-        `${base}favicon.svg`,
-        `${base}icons/icon-192.png`,
-        `${base}icons/icon-512.png`,
-        `${base}icons/icon-maskable-512.png`,
-        `${base}icons/apple-touch-icon.png`,
         // The exercise index, so the picker works offline. It is the largest static
         // file in the app and the first thing a returning user reaches for.
         `${base}exercises-index.json`,
+        ...readPublicNames('icons', /\.(png|svg)$/).map(name => `${base}${name}`),
+        ...readPublicNames('', /^favicon.*\.svg$/).map(name => `${base}${name}`),
       ]
 
       // The built assets: the JavaScript and CSS the shell loads, and the font files.
@@ -85,6 +88,21 @@ function readAssetNames(outDir, dir, pattern) {
     .filter(name => pattern.test(name))
     .sort()
     .map(name => `${dir}/${name}`)
+}
+
+/**
+ * The names of the files in `public/`, matching a pattern.
+ *
+ * `public/` is copied verbatim into `dist/`, so these are the paths the deployed
+ * server will serve them at.
+ */
+function readPublicNames(dir, pattern) {
+  const full = `${PUBLIC_DIR}/${dir}`
+  if (!existsSync(full)) return []
+  return readdirSync(full)
+    .filter(name => pattern.test(name))
+    .sort()
+    .map(name => (dir ? `${dir}/${name}` : name))
 }
 
 export default defineConfig({

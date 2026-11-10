@@ -1,72 +1,102 @@
 // Generates the app icons from one SVG mark.
 //
-//   node scripts/gen-icons.mjs
+//   npm run gen:icons
 //
-// The mark is a lightning bolt on a yellow square: the Neubrutalism palette's loudest
-// pair, black on yellow at 15:1.
+// The mark is a dumbbell on a yellow square: black on yellow at 15:1, and it says
+// "gym" at 40 pixels on a home screen. The previous mark was a lightning bolt,
+// which is the logo of some other app entirely.
 //
 // It is a script rather than committed binaries because the icons have to agree with
-// each other — the same bolt, the same colours, four sizes — and four hand-exported
+// each other — the same mark, the same colours, four sizes — and four hand-exported
 // PNGs never agree for long. It renders through headless Chrome, which is already a
 // dependency of the browser suites, so there is nothing new to install.
 //
-// The maskable icon is drawn with a smaller bolt: Android crops a maskable icon to a
-// circle and the safe zone is the middle 80%, so a full-bleed bolt would have its
-// tips cut off.
+// ── Why the filenames carry a hash ─────────────────────────────────────────────
+// A phone caches the home-screen icon by URL, and it caches it hard: iOS will keep
+// showing the icon it fetched when the app was added, even after the bytes behind
+// that URL have changed. So a restyle that keeps the same filename is a restyle
+// that never reaches anyone's phone.
+//
+// Every icon therefore carries a short hash of the mark in its name. Change the mark
+// and the names change, so the URL changes, so the phone asks again. The generator
+// owns the manifest and the two icon links in index.html, because those three have
+// to agree with the files on disk or the phone is back to a stale icon.
+//
+// The maskable icon is drawn smaller: Android crops a maskable icon to a circle and
+// the safe zone is the middle 80%, so a full-width mark would have its plates cut
+// off.
 
 import { spawn } from 'node:child_process'
 import { setTimeout as sleep } from 'node:timers/promises'
-import { existsSync, mkdirSync, writeFileSync, mkdtempSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync, mkdtempSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { createHash } from 'node:crypto'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
-const OUT = join(root, 'public', 'icons')
+const ICONS = join(root, 'public', 'icons')
 
 const YELLOW = '#FFEB3B'
 const BLACK = '#000000'
 
-// The bolt, from the app's existing mark. Its own bounding box is roughly
-// x 1.2-46.6, y 0.5-44.9 in a 48x46 space.
-const BOLT =
-  'M25.946 44.938c-.664.845-2.021.375-2.021-.698V33.937a2.26 2.26 0 0 0-2.262-2.262H10.287c-.92 0-1.456-1.04-.92-1.788l7.48-10.471c1.07-1.497 0-3.578-1.842-3.578H1.237c-.92 0-1.456-1.04-.92-1.788L10.013.474c.214-.297.556-.474.92-.474h28.894c.92 0 1.456 1.04.92 1.788l-7.48 10.471c-1.07 1.498 0 3.579 1.842 3.579h11.377c.943 0 1.473 1.088.89 1.83L25.947 44.94z'
+/**
+ * The mark, in a 512-unit box.
+ *
+ * A dumbbell seen side on: a heavy plate at each end, a lighter plate inboard of
+ * it, and the handle between. The silhouette steps down 216 → 120 → 48 and back up,
+ * which is what makes it read as a dumbbell rather than as a row of blocks. Every
+ * rectangle is symmetric about the centre (256).
+ */
+const PLATES = [
+  // [x, y, width, height]
+  [76, 148, 68, 216], // outer left
+  [144, 196, 40, 120], // inner left
+  [144, 232, 224, 48], // handle
+  [328, 196, 40, 120], // inner right
+  [368, 148, 68, 216], // outer right
+]
 
 /**
  * The mark as an SVG document.
  *
- * @param size    the canvas edge in pixels
- * @param scale   how big the bolt is drawn, as a multiple of its own 48-unit box
- * @param radius  the corner radius of the yellow square
+ * @param size   the canvas edge in pixels
+ * @param scale  how big the mark is drawn, as a multiple of its own 512-unit box
  */
-function mark(size, scale, radius) {
-  const boltWidth = 45.4 * scale
-  const boltHeight = 44.5 * scale
-  // Centre the bolt's own box (1.2..46.6 horizontally, 0.5..44.9 vertically).
-  const tx = (size - boltWidth) / 2 - 1.2 * scale
-  const ty = (size - boltHeight) / 2 - 0.5 * scale
+function mark(size, scale) {
+  const drawn = 512 * scale
+  const offset = (size - drawn) / 2
+  const plates = PLATES
+    .map(([x, y, w, h]) => `    <rect x="${x}" y="${y}" width="${w}" height="${h}"/>`)
+    .join('\n')
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
-  <rect width="${size}" height="${size}" rx="${radius}" fill="${YELLOW}"/>
-  <g transform="translate(${tx.toFixed(2)} ${ty.toFixed(2)}) scale(${scale})">
-    <path fill="${BLACK}" d="${BOLT}"/>
+  <rect width="${size}" height="${size}" fill="${YELLOW}"/>
+  <g transform="translate(${offset.toFixed(2)} ${offset.toFixed(2)}) scale(${scale})" fill="${BLACK}">
+${plates}
   </g>
 </svg>
 `
 }
 
-// The favicon is the same mark, small enough to be a tab icon.
-const FAVICON = mark(512, 6.6, 0)
+// The favicon is the same mark.
+const FAVICON = mark(512, 1)
+
+// One hash for the whole set: it identifies the mark, not the size.
+const VERSION = createHash('sha256')
+  .update(PLATES.map(p => p.join(',')).join('|') + YELLOW + BLACK)
+  .digest('hex')
+  .slice(0, 8)
 
 /** The four PNGs, and the SVG each is rendered from. */
 const TARGETS = [
-  { file: 'icon-192.png', size: 192, svg: mark(192, 6.6, 0) },
-  { file: 'icon-512.png', size: 512, svg: mark(512, 6.6, 0) },
+  { file: `icon-192-${VERSION}.png`, size: 192, svg: mark(192, 1) },
+  { file: `icon-512-${VERSION}.png`, size: 512, svg: mark(512, 1) },
   // Android crops a maskable icon to a circle and keeps the middle 80% safe, so the
-  // bolt is drawn smaller here.
-  { file: 'icon-maskable-512.png', size: 512, svg: mark(512, 4.6, 0) },
+  // mark is drawn at 62% here.
+  { file: `icon-maskable-512-${VERSION}.png`, size: 512, svg: mark(512, 0.62) },
   // iOS puts this one on a rounded rectangle of its own and applies its own mask,
   // so it fills the whole square.
-  { file: 'apple-touch-icon.png', size: 180, svg: mark(180, 6.6, 0) },
+  { file: `apple-touch-icon-${VERSION}.png`, size: 180, svg: mark(180, 1) },
 ]
 
 function findChrome() {
@@ -90,9 +120,8 @@ if (!chrome) {
   process.exit(1)
 }
 
-mkdirSync(OUT, { recursive: true })
-writeFileSync(join(root, 'public', 'favicon.svg'), FAVICON)
-console.log('wrote public/favicon.svg')
+mkdirSync(ICONS, { recursive: true })
+writeFileSync(join(root, 'public', `favicon-${VERSION}.svg`), FAVICON)
 
 const work = mkdtempSync(join(tmpdir(), 'gym-icons-'))
 
@@ -103,7 +132,7 @@ ${svg}`
   const page = join(work, `${file}.html`)
   writeFileSync(page, html)
 
-  const out = join(OUT, file)
+  const out = join(ICONS, file)
   const profile = mkdtempSync(join(tmpdir(), 'gym-icons-profile-'))
   const browser = spawn(chrome, [
     '--headless=new',
@@ -131,8 +160,55 @@ ${svg}`
     console.error(`failed to render ${file}`)
     process.exit(1)
   }
-  const { statSync } = await import('node:fs')
-  console.log(`wrote public/icons/${file} (${statSync(out).size} bytes)`)
+  console.log(`wrote public/icons/${file}`)
 }
 
-console.log('Icons generated.')
+// The old icons are removed: leaving them on disk means a phone could still be
+// pointed at one of them by a cached manifest, and they are dead weight.
+for (const name of readdirSync(ICONS)) {
+  if (name.endsWith('.png') && !TARGETS.some(t => t.file === name)) {
+    rmSync(join(ICONS, name))
+    console.log(`removed public/icons/${name}`)
+  }
+}
+for (const name of readdirSync(join(root, 'public'))) {
+  // Both the hashed names and the legacy un-hashed `favicon.svg`, which is the one
+  // this script replaced.
+  const isFavicon = /^favicon.*\.svg$/.test(name)
+  if (isFavicon && name !== `favicon-${VERSION}.svg`) {
+    rmSync(join(root, 'public', name))
+    console.log(`removed public/${name}`)
+  }
+}
+
+/* ── The manifest and the two links in index.html ──
+ *
+ * These three have to name the same files that are on disk. Writing them here rather
+ * than by hand is the only way they cannot drift, and a drifted icon path is exactly
+ * the bug this script exists to prevent.
+ */
+
+const manifestPath = join(root, 'public', 'manifest.json')
+const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
+manifest.icons = [
+  { src: `/gym-tracker/icons/icon-192-${VERSION}.png`, sizes: '192x192', type: 'image/png', purpose: 'any' },
+  { src: `/gym-tracker/icons/icon-512-${VERSION}.png`, sizes: '512x512', type: 'image/png', purpose: 'any' },
+  { src: `/gym-tracker/icons/icon-maskable-512-${VERSION}.png`, sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+]
+writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
+console.log('wrote public/manifest.json')
+
+const indexPath = join(root, 'index.html')
+let index = readFileSync(indexPath, 'utf8')
+index = index.replace(
+  /(<link rel="icon" type="image\/svg\+xml" href=")[^"]*(")/,
+  `$1/gym-tracker/favicon-${VERSION}.svg$2`,
+)
+index = index.replace(
+  /(<link rel="apple-touch-icon" sizes="180x180" href=")[^"]*(")/,
+  `$1/gym-tracker/icons/apple-touch-icon-${VERSION}.png$2`,
+)
+writeFileSync(indexPath, index)
+console.log('updated index.html')
+
+console.log(`\nIcons generated. Version ${VERSION}.`)
