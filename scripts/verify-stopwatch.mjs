@@ -7,12 +7,14 @@
 // This is the one feature that cannot be checked by reading the code. The claim is
 // specific and behavioural:
 //
-//   1. Opening the Log page starts the clock, with no button pressed.
-//   2. The clock keeps running while nothing is looking at it — hidden tab, app
+//   1. Opening the Log page does NOT start the clock. It waits for a deliberate Start.
+//   2. Start begins the measurement; Pause freezes it; Resume carries on from where it
+//      paused; Stop ends it and keeps the total.
+//   3. The clock keeps running while nothing is looking at it — hidden tab, app
 //      closed, and crucially *signed out*. The user asked for exactly this: "keep
 //      counting until it hit saved. Not just when visible. Even when I logged out."
-//   3. Saving the workout stores the elapsed time on the session.
-//   4. The edit form reached from the history shows that duration and can change it.
+//   4. Saving the workout stores the measured duration on the session.
+//   5. The edit form reached from the history shows that duration and can change it.
 //
 // It drives headless Chrome over CDP, the way the other browser suites here do, and
 // it checks the database afterwards — because "the timer looked right on screen" is
@@ -45,6 +47,14 @@ let failures = 0
 function check(label, ok, detail = '') {
   if (!ok) failures++
   console.log(`  ${ok ? 'PASS' : 'FAIL'}  ${label}${detail ? `  (${detail})` : ''}`)
+}
+
+/** A stopwatch readout — "05:03" or "1:05:03" — as seconds. */
+function clockToSeconds(text) {
+  if (!text) return null
+  const parts = text.split(':').map(Number)
+  if (parts.some(n => !Number.isFinite(n))) return null
+  return parts.reduce((total, n) => total * 60 + n, 0)
 }
 
 /* ── The browser ── */
@@ -147,14 +157,25 @@ const readStopwatch = `(() => {
   return JSON.stringify(out)
 })()`
 
-/** The clock the Log page is showing, and the "Session time" label beside it. */
+/** The clock the Log page is showing, the state beside it, and the controls offered. */
 const readClock = `(() => {
   const text = document.body.innerText || ''
   const hasLabel = /Session time/i.test(text)
   // The clock sits next to the "Session time" label, in a .tnum span.
   const spans = Array.from(document.querySelectorAll('span.tnum'))
   const clock = spans.map(s => (s.textContent || '').trim()).find(t => /^(\\d+:)?\\d{2}:\\d{2}$/.test(t))
-  return JSON.stringify({ hasLabel, clock: clock || null })
+  const buttons = Array.from(document.querySelectorAll('button')).map(b => (b.textContent || '').trim())
+  const controls = buttons.filter(t => /^(Start|Start over|Pause|Resume|Stop)$/.test(t))
+  const state = text.match(/\\b(not started|running|paused|stopped)\\b/)
+  return JSON.stringify({ hasLabel, clock: clock || null, controls, state: state ? state[1] : null })
+})()`
+
+/** Click one of the timer's controls by its label. */
+const clickControl = label => `(() => {
+  const btn = Array.from(document.querySelectorAll('button')).find(b => (b.textContent || '').trim() === ${JSON.stringify(label)})
+  if (!btn) return 'no ' + ${JSON.stringify(label)} + ' button'
+  btn.click()
+  return 'clicked'
 })()`
 
 /** Fill in one set on the first exercise card, so the workout can be saved. */
@@ -311,39 +332,98 @@ try {
     headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}`, 'X-Session-Token': token },
   })
 
-  console.log('\n2. opening the Log page starts the clock, with no button pressed')
+  console.log('\n2. opening the Log page does NOT start the clock')
   await evaluate(`location.hash = '#/log'`)
   await sleep(3500)
 
   const clock1 = JSON.parse(await evaluate(readClock))
   check('the page shows a "Session time" label', clock1.hasLabel, JSON.stringify(clock1))
-  check('a clock is running', Boolean(clock1.clock), String(clock1.clock))
+  check('the clock reads zero', clock1.clock === '00:00', String(clock1.clock))
+  check('and it says it has not started', clock1.state === 'not started', String(clock1.state))
+  check('the only control offered is Start', JSON.stringify(clock1.controls) === '["Start"]', JSON.stringify(clock1.controls))
 
   const sw1 = JSON.parse(await evaluate(readStopwatch))
-  const swKeys = Object.keys(sw1)
-  check('a stopwatch was started and stored', swKeys.length === 1, swKeys.join(', '))
-  const start1 = swKeys.length ? JSON.parse(sw1[swKeys[0]]).startedAt : 0
-  check('it has a start instant', Number.isFinite(start1) && start1 > 0, String(start1))
+  check('and nothing was stored', Object.keys(sw1).length === 0, JSON.stringify(sw1))
 
-  console.log('\n3. the clock ticks')
-  await sleep(2500)
+  console.log('\n3. pressing Start begins the measurement')
+  check('Start was clicked', (await evaluate(clickControl('Start'))) === 'clicked')
+  await sleep(1200)
+
   const clock2 = JSON.parse(await evaluate(readClock))
-  check('the readout moved on', clock2.clock !== clock1.clock, `${clock1.clock} -> ${clock2.clock}`)
+  check('it is now running', clock2.state === 'running', JSON.stringify(clock2))
+  check('and the controls are Pause and Stop', JSON.stringify(clock2.controls) === '["Pause","Stop"]', JSON.stringify(clock2.controls))
 
-  console.log('\n4. the clock keeps running while nothing is watching')
+  const sw2 = JSON.parse(await evaluate(readStopwatch))
+  const sw2Key = Object.keys(sw2)[0]
+  check('a measurement was stored', Boolean(sw2Key), sw2Key)
+  const runningSince = sw2Key ? JSON.parse(sw2[sw2Key]).runningSince : 0
+  check('and it has a start instant', Number.isFinite(runningSince) && runningSince > 0, String(runningSince))
+
+  console.log('\n4. the clock ticks')
+  await sleep(2500)
+  const clock3 = JSON.parse(await evaluate(readClock))
+  check('the readout moved on', clock3.clock !== clock2.clock, `${clock2.clock} -> ${clock3.clock}`)
+
+  console.log('\n5. Pause freezes the count')
+  check('Pause was clicked', (await evaluate(clickControl('Pause'))) === 'clicked')
+  await sleep(600)
+  const paused1 = JSON.parse(await evaluate(readClock))
+  check('it says it is paused', paused1.state === 'paused', JSON.stringify(paused1))
+  check('and offers Resume and Stop', JSON.stringify(paused1.controls) === '["Resume","Stop"]', JSON.stringify(paused1.controls))
+  const pausedAt = paused1.clock
+
+  await sleep(3000)
+  const paused2 = JSON.parse(await evaluate(readClock))
+  check('a paused measurement does not count the time that passes', paused2.clock === pausedAt, `${pausedAt} -> ${paused2.clock}`)
+
+  console.log('\n6. Resume carries on from where it paused')
+  check('Resume was clicked', (await evaluate(clickControl('Resume'))) === 'clicked')
+  await sleep(1500)
+  const resumed = JSON.parse(await evaluate(readClock))
+  check('it is running again', resumed.state === 'running', JSON.stringify(resumed))
+  check(
+    'and the time from before the pause is still counted',
+    resumed.clock !== pausedAt,
+    `${pausedAt} -> ${resumed.clock}`,
+  )
+
+  console.log('\n7. the clock keeps running while nothing is watching')
   // Hiding the tab is what a phone does when the app is backgrounded. The clock must
   // still be derived from the wall clock rather than from ticks, so the value on the
   // screen after coming back is the real elapsed time.
-  await send('Emulation.setPageScaleFactor', { pageScaleFactor: 1 }).catch(() => {})
   await evaluate(`document.dispatchEvent(new Event('visibilitychange'))`)
   await sleep(3000)
-  const clock3 = JSON.parse(await evaluate(readClock))
-  check('it still reads a time', Boolean(clock3.clock), String(clock3.clock))
+  const clock4 = JSON.parse(await evaluate(readClock))
+  check('it still reads a time', Boolean(clock4.clock), String(clock4.clock))
 
-  console.log('\n5. signing out does not stop the clock')
+  console.log('\n7b. the cloud draft carries the measurement')
+  // The draft is what carries the timer to another device, so it has to hold both
+  // halves of it: the time already counted, and when the current segment began.
+  const draftRes = await fetch(
+    `${SB_URL}/rest/v1/workout_sessions?select=id,duration_seconds,started_at,is_draft&is_draft=eq.true&limit=1`,
+    { headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}`, 'X-Session-Token': token } },
+  )
+  const draftRows = await draftRes.json()
+  const draft = Array.isArray(draftRows) ? draftRows[0] : null
+  check('a draft was written', Boolean(draft), JSON.stringify(draftRows))
+  if (draft) {
+    check('it carries the start of the current segment', Boolean(draft.started_at), String(draft.started_at))
+    check('and the time already counted', Number.isFinite(draft.duration_seconds), String(draft.duration_seconds))
+    if (draft.started_at) {
+      const fromDraft = (draft.duration_seconds || 0) + (Date.now() - Date.parse(draft.started_at)) / 1000
+      const shown = clockToSeconds(clock4.clock)
+      check(
+        'and the two together give the elapsed time',
+        shown !== null && Math.abs(fromDraft - shown) <= 2,
+        `${fromDraft.toFixed(0)}s from the draft vs ${shown}s on screen`,
+      )
+    }
+  }
+
+  console.log('\n8. signing out does not stop the measurement')
   const before = JSON.parse(await evaluate(readStopwatch))
   const beforeKey = Object.keys(before)[0]
-  const beforeStart = JSON.parse(before[beforeKey]).startedAt
+  const beforeRecord = beforeKey ? JSON.parse(before[beforeKey]) : null
   check('signed out', (await evaluate(clickSignOut)) === 'clicked')
   await sleep(900)
   check('confirmed', (await evaluate(confirmSignOut)) === 'confirmed')
@@ -351,15 +431,15 @@ try {
 
   const after = JSON.parse(await evaluate(readStopwatch))
   const afterKey = Object.keys(after)[0]
-  check('the stopwatch survived the sign-out', afterKey === beforeKey, `${beforeKey} -> ${afterKey}`)
+  check('the measurement survived the sign-out', afterKey === beforeKey, `${beforeKey} -> ${afterKey}`)
   check(
-    'and it is still the same start instant, so the time did not restart',
-    afterKey && JSON.parse(after[afterKey]).startedAt === beforeStart,
-    `${beforeStart} -> ${afterKey ? JSON.parse(after[afterKey]).startedAt : 'none'}`,
+    'and it is still the same segment, so the time did not restart',
+    afterKey && JSON.parse(after[afterKey]).runningSince === beforeRecord.runningSince,
+    `${beforeRecord?.runningSince} -> ${afterKey ? JSON.parse(after[afterKey]).runningSince : 'none'}`,
   )
   check('the token was cleared', (await evaluate(`sessionStorage.getItem('gym_token')`)) === null)
 
-  console.log('\n6. signing back in resumes the same clock')
+  console.log('\n9. signing back in picks the measurement up again')
   await send('Page.navigate', { url: `${ORIGIN}${BASE}` })
   await sleep(2500)
   check('signed in again', (await evaluate(signIn)) === 'submitted')
@@ -374,17 +454,29 @@ try {
   await evaluate(`location.hash = '#/log'`)
   await sleep(3500)
 
-  const sw2 = JSON.parse(await evaluate(readStopwatch))
-  const sw2Key = Object.keys(sw2)[0]
+  const sw3 = JSON.parse(await evaluate(readStopwatch))
+  const sw3Key = Object.keys(sw3)[0]
   check(
-    'the resumed clock is the original one',
-    sw2Key && JSON.parse(sw2[sw2Key]).startedAt === beforeStart,
-    `${beforeStart} -> ${sw2Key ? JSON.parse(sw2[sw2Key]).startedAt : 'none'}`,
+    'the measurement is the original one',
+    sw3Key && JSON.parse(sw3[sw3Key]).runningSince === beforeRecord.runningSince,
+    `${beforeRecord?.runningSince} -> ${sw3Key ? JSON.parse(sw3[sw3Key]).runningSince : 'none'}`,
   )
-  const clock4 = JSON.parse(await evaluate(readClock))
-  check('the clock is showing a time', Boolean(clock4.clock), String(clock4.clock))
+  const clock5 = JSON.parse(await evaluate(readClock))
+  check('and it is still running', clock5.state === 'running', JSON.stringify(clock5))
 
-  console.log('\n7. saving the workout records the elapsed time')
+  console.log('\n10. Stop ends the measurement and keeps the total')
+  check('Stop was clicked', (await evaluate(clickControl('Stop'))) === 'clicked')
+  await sleep(600)
+  const stopped = JSON.parse(await evaluate(readClock))
+  check('it says it is stopped', stopped.state === 'stopped', JSON.stringify(stopped))
+  check('and offers only Start over', JSON.stringify(stopped.controls) === '["Start over"]', JSON.stringify(stopped.controls))
+  const stoppedAt = stopped.clock
+
+  await sleep(2500)
+  const stopped2 = JSON.parse(await evaluate(readClock))
+  check('a stopped measurement does not count the time that passes', stopped2.clock === stoppedAt, `${stoppedAt} -> ${stopped2.clock}`)
+
+  console.log('\n11. saving the workout records the elapsed time')
   check('a set was entered', (await evaluate(fillASet)) === 'filled')
   await sleep(600)
   check('save was clicked', (await evaluate(saveSession)) === 'clicked')
@@ -408,24 +500,23 @@ try {
       saved.duration_seconds >= 8 && saved.duration_seconds < 600,
       `${saved.duration_seconds}s`,
     )
-    check('it carries the start instant', Boolean(saved.started_at), String(saved.started_at))
-    // The duration must be the gap between the start instant and the save, not a
-    // number that happens to look plausible.
-    if (saved.started_at) {
-      const gap = Math.round((Date.now() - Date.parse(saved.started_at)) / 1000)
-      check(
-        'the duration matches the start instant',
-        Math.abs(saved.duration_seconds - gap) < 120,
-        `duration ${saved.duration_seconds}s vs ${gap}s since the start`,
-      )
-    }
+    // The measurement is over, so no segment is counting and the column is cleared.
+    check('and no segment is left counting', saved.started_at === null, String(saved.started_at))
+    // The duration must be the time the clock actually showed, not a number that
+    // happens to look plausible. The readout is mm:ss, or h:mm:ss past an hour.
+    const shown = clockToSeconds(stoppedAt)
+    check(
+      'the duration matches the clock the user watched',
+      shown !== null && Math.abs(saved.duration_seconds - shown) <= 1,
+      `recorded ${saved.duration_seconds}s vs the ${stoppedAt} on screen`,
+    )
   }
 
-  console.log('\n8. the stopwatch is cleared once the session is saved')
-  const sw3 = JSON.parse(await evaluate(readStopwatch))
-  check('the stopwatch was cleared on save', Object.keys(sw3).length === 0, JSON.stringify(sw3))
+  console.log('\n12. the measurement is cleared once the session is saved')
+  const sw4 = JSON.parse(await evaluate(readStopwatch))
+  check('the measurement was cleared on save', Object.keys(sw4).length === 0, JSON.stringify(sw4))
 
-  console.log('\n9. the edit form shows the recorded duration, and can change it')
+  console.log('\n13. the edit form shows the recorded duration, and can change it')
   if (saved) {
     await evaluate(`location.hash = '#/history'`)
     await sleep(2500)

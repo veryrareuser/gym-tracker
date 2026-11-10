@@ -5,7 +5,7 @@ import { Plus, Trash2, ChevronDown, ChevronUp, Check, ArrowLeft, RotateCcw, Cloc
 import { getExercises, getSession, getDraft, discardDraft, saveExercise, saveSession } from '../lib/db'
 import { generateId, todayISO, formatDate, formatDuration, formatStopwatch } from '../lib/utils'
 import { imageUrl } from '../lib/exerciseDb'
-import { startStopwatch, resumeStopwatch, stopStopwatch, elapsedSeconds } from '../lib/stopwatch'
+import { startStopwatch, pauseStopwatch, stopStopwatch, clearStopwatch, restoreStopwatch, readStopwatch, elapsedSeconds, elapsedMs, isRunning } from '../lib/stopwatch'
 import useAutosave from '../lib/useAutosave'
 import { mergeWithLibrary } from '../lib/draft'
 import { currentUserId } from '../lib/auth'
@@ -84,9 +84,13 @@ export default function LogWorkout() {
   // would re-run the load and re-fetch the draft it just restored. A ref captures the
   // opening value once, which is what the effect means by "the session I am opening".
   const openingSessionIdRef = useRef(currentSessionId)
-  // When the workout started, in epoch milliseconds. Null until the load resolves,
-  // because the start instant depends on which draft was restored.
-  const [startedAt, setStartedAt] = useState(null)
+  // The measurement, or null when there is none.
+  //
+  // This is the stopwatch's whole state: the time already counted, and the instant
+  // the current segment began. Null means no measurement has been started, which is
+  // the normal state — the clock waits for a deliberate Start rather than starting
+  // itself when the page opens.
+  const [timer, setTimer] = useState(null)
   // The measured length of the session, in seconds. Set on save; the field below lets
   // it be corrected by hand, which is the only way to time a workout that was not
   // measured — a session logged from memory, or one whose draft was lost.
@@ -104,6 +108,14 @@ export default function LogWorkout() {
   // the minutes away.
   const [durationHours, setDurationHours] = useState(null)
   const [durationMinutes, setDurationMinutes] = useState(null)
+  // Whether the duration fields have been touched.
+  //
+  // The fields are pre-filled with the recorded duration, and they show hours and
+  // minutes but not seconds. A workout recorded as 23 seconds therefore pre-fills as
+  // "0h 0m", and saving the notes of an unrelated edit would quietly turn a
+  // 23-second workout into a 0-second one. The recorded value is kept until a field
+  // is actually edited.
+  const [durationTouched, setDurationTouched] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -155,6 +167,17 @@ export default function LogWorkout() {
       // what it was rather than to nothing when the write never happened.
       const cloud = await getDraft()
       if (cancelled) return
+
+      // The measurement is restored from the local record first, and from the cloud
+      // draft only when there is no local record.
+      //
+      // The local record is written the moment the clock is started, paused or
+      // stopped, so on the device that took the measurement it is always at least as
+      // fresh as the draft, which is written on a debounce. The draft is what carries
+      // the measurement to a *different* device, and there is no local record to
+      // disagree with it.
+      const local = readStopwatch(currentUserId())
+
       if (cloud) {
         setCurrentSessionId(cloud.id)
         setDate(cloud.date || todayISO())
@@ -165,9 +188,18 @@ export default function LogWorkout() {
         // back, empty ones included, which is what you were looking at when you left.
         setLogs(mergeWithLibrary(exs, cloud.exercise_logs, generateId))
         setHasDraft(true)
-        // The draft carries when the workout started, so the timer resumes at the same
-        // instant it was at rather than starting over.
-        setStartedAt(resumeStopwatch(currentUserId(), cloud.id, cloud.started_at))
+        if (local) {
+          setTimer({ ...local, sessionId: cloud.id })
+        } else {
+          // The draft carries the time already counted and the start of the current
+          // segment, which between them give the elapsed time exactly.
+          setTimer(
+            restoreStopwatch(currentUserId(), cloud.id, {
+              accumulatedMs: (cloud.duration_seconds || 0) * 1000,
+              runningSince: cloud.started_at ? Date.parse(cloud.started_at) : null,
+            }),
+          )
+        }
         loadedRef.current = true
         return
       }
@@ -184,9 +216,7 @@ export default function LogWorkout() {
           // keeps both paths consistent.
           setLogs(mergeWithLibrary(exs, draft.logs, generateId))
           setHasDraft(true)
-          // The local mirror keeps the start instant too, so a reload in the middle of a
-          // workout does not restart the clock.
-          setStartedAt(resumeStopwatch(currentUserId(), openingSessionIdRef.current, draft.startedAt))
+          if (local) setTimer({ ...local, sessionId: openingSessionIdRef.current })
           loadedRef.current = true
           return
         } catch {
@@ -196,8 +226,14 @@ export default function LogWorkout() {
       }
 
       setLogs(exs.map((ex, i) => emptyLog(ex, i)))
-      // A brand new workout starts its clock now.
-      setStartedAt(startStopwatch(currentUserId(), openingSessionIdRef.current))
+      // No clock is started here. Opening the Log page used to start one by itself,
+      // which meant that simply looking at the app recorded time nobody spent
+      // training. The measurement waits for a deliberate Start.
+      //
+      // A measurement left over from an earlier visit is restored, though: the clock
+      // keeps counting while the app is closed or the account is signed out, so
+      // coming back to it should show the time that passed, not zero.
+      if (local) setTimer({ ...local, sessionId: openingSessionIdRef.current })
       loadedRef.current = true
     }
     load()
@@ -216,11 +252,17 @@ export default function LogWorkout() {
     // draft's date, visiting Log on one day and logging on another silently filed the
     // workout under the first day. That is exactly how a session dated the 26th ended
     // up created on the 28th, with only a bare "Discard" chip to hint at it.
+    // A running measurement is content too. The draft is what carries the timer to
+    // another device, and a workout that was started but not yet written down would
+    // otherwise lose its clock the moment the tab closed.
     const hasContent =
-      logs.some(l => l.set_entries.some(s => s.weight || s.reps)) || sessionNotes.trim().length > 0
+      logs.some(l => l.set_entries.some(s => s.weight || s.reps)) ||
+      sessionNotes.trim().length > 0 ||
+      timer !== null
     if (hasContent) {
-      // startedAt rides along so a restored draft resumes the clock where it was.
-      const payload = JSON.stringify({ logs, date, sessionNotes, startedAt })
+      // The measurement rides along so a restored draft picks the clock up where it
+      // was — running, paused or stopped.
+      const payload = JSON.stringify({ logs, date, sessionNotes, timer })
       sessionStorage.setItem(draftKey(), payload)
       mirrorDraft('set', payload)
     } else {
@@ -228,7 +270,7 @@ export default function LogWorkout() {
       mirrorDraft('clear')
     }
     setHasDraft(hasContent)
-  }, [logs, date, sessionNotes, startedAt, isEditMode])
+  }, [logs, date, sessionNotes, timer, isEditMode])
 
   // Warn before the window closes or reloads with an unsaved workout.
   //
@@ -262,23 +304,30 @@ export default function LogWorkout() {
     const fresh = generateId()
     setCurrentSessionId(fresh)
     setLogs(exercises.map((ex, i) => emptyLog(ex, i)))
-    // The abandoned workout's clock goes with it, and the next one starts fresh.
-    stopStopwatch(currentUserId())
-    setStartedAt(startStopwatch(currentUserId(), fresh))
+    // The abandoned workout's measurement goes with it. The next one starts from zero,
+    // and waits for a deliberate Start like any other.
+    clearStopwatch(currentUserId())
+    setTimer(null)
   }
 
   // What autosave writes. Same shape handleSave builds, minus the filtering that only
   // makes sense at commit time: a draft keeps every set the user has typed, including
   // half-filled ones, because that is the state being protected.
   //
-  // started_at is included so the cloud draft knows when the workout began, which is
-  // what lets the timer continue on another device.
+  // The measurement rides along in two pieces, and between them they give the elapsed
+  // time exactly:
+  //
+  //   duration_seconds   the time already counted, from segments that have finished
+  //   started_at         when the current segment began, null when not counting
+  //
+  // elapsed = duration_seconds + (started_at ? now - started_at : 0)
   const autosaveSession = useMemo(
     () => ({
       id: currentSessionId,
       date,
       notes: sessionNotes,
-      started_at: startedAt ? new Date(startedAt).toISOString() : null,
+      duration_seconds: timer ? Math.round(timer.accumulatedMs / 1000) : undefined,
+      started_at: timer?.runningSince ? new Date(timer.runningSince).toISOString() : null,
       exercise_logs: logs
         .filter(log => log.set_entries.some(s => s.weight || s.reps))
         .map((log, i) => ({
@@ -290,7 +339,7 @@ export default function LogWorkout() {
             .map(s => ({ ...s, exercise_log_id: log.id })),
         })),
     }),
-    [currentSessionId, date, sessionNotes, startedAt, logs],
+    [currentSessionId, date, sessionNotes, timer, logs],
   )
 
   // Autosave runs for new sessions only. Editing a saved workout is a deliberate, brief
@@ -362,28 +411,77 @@ export default function LogWorkout() {
     setCollapsed(prev => ({ ...prev, [logId]: !prev[logId] }))
   }
 
+  // ── The measurement ──
+  //
+  // Four controls, and the state machine they drive:
+  //
+  //   idle ──Start──► running ──Pause──► paused ──Resume──► running
+  //                      │                  │
+  //                      └────Stop──────────┴──► stopped ──Start over──► idle
+  //
+  // Pause and Stop do the same arithmetic and mean different things: a paused
+  // measurement can be resumed, a stopped one is final.
+
+  function handleStartTimer() {
+    setTimer(startStopwatch(currentUserId(), currentSessionId))
+  }
+
+  function handlePauseTimer() {
+    const paused = pauseStopwatch(currentUserId())
+    if (paused) setTimer(paused)
+  }
+
+  function handleStopTimer() {
+    const stopped = stopStopwatch(currentUserId())
+    if (stopped) setTimer(stopped)
+  }
+
+  function handleResetTimer() {
+    clearStopwatch(currentUserId())
+    setTimer(null)
+  }
+
   async function handleSave() {
     setSaving(true)
     setSaveError(null)
-    // How long the workout took, measured from the moment it started.
+    // How long the workout took.
     //
     // The hand-entered value wins when there is one: it is how a workout that was not
     // timed gets a duration at all. Otherwise the measured elapsed time is used, which
     // is correct even when the app was closed for part of the session, because the
     // elapsed time comes from the clock rather than from ticks.
-    const measured = startedAt ? elapsedSeconds(startedAt) : null
-    // Either field being filled in means a duration was entered. Both are read, so
-    // setting the hours and leaving the minutes alone gives an exact number of hours.
-    const entered = durationHours !== null || durationMinutes !== null
-    const duration = entered
-      ? (durationHours || 0) * 3600 + (durationMinutes || 0) * 60
-      : measured
+    //
+    // A measurement that is still running is frozen first, so the total includes the
+    // segment in progress. Saving ends the workout's timing.
+    const frozen = isRunning(timer) ? stopStopwatch(currentUserId()) : timer
+    const measured = frozen ? elapsedSeconds(frozen) : null
+    // A duration typed in by hand wins when there is one: it is how a workout that was
+    // not timed gets a duration at all.
+    //
+    // When the fields have not been touched, the recorded duration is kept as it is —
+    // in edit mode they are pre-filled but only show whole minutes, so recomputing
+    // from them would quietly round a 23-second workout down to zero.
+    //
+    // Otherwise the measured elapsed time is used, which is correct even when the app
+    // was closed for part of the session, because the elapsed time comes from the clock
+    // rather than from ticks.
+    const duration = durationTouched
+      ? durationHours === null && durationMinutes === null
+        ? null
+        : (durationHours || 0) * 3600 + (durationMinutes || 0) * 60
+      : durationSeconds ?? measured
     const session = {
       id: currentSessionId,
       date,
       notes: sessionNotes,
       duration_seconds: duration,
-      started_at: startedAt ? new Date(startedAt).toISOString() : null,
+      // The measurement is over, so there is no segment still counting. The column is
+      // set to null rather than left alone, because a draft's started_at is the start
+      // of a segment and this row is the finished workout.
+      //
+      // Editing a saved workout is different: it was never being timed, and the row's
+      // own start instant is left exactly as it was.
+      ...(isEditMode ? {} : { started_at: null }),
       exercise_logs: logs
         .filter(log => log.set_entries.some(s => s.weight || s.reps))
         .map((log, i) => ({
@@ -401,10 +499,11 @@ export default function LogWorkout() {
       await saveSession(session, { draft: false })
       sessionStorage.removeItem(draftKey())
       mirrorDraft('clear')
-      // The workout is over, so the clock stops. Clearing it here rather than on
-      // unmount means leaving the page without saving keeps the timer running, which
-      // is the behaviour that was asked for.
-      stopStopwatch(currentUserId())
+      // The workout is over, so the measurement goes with it. Clearing it here rather
+      // than on unmount means leaving the page without saving keeps the clock running,
+      // which is the behaviour that was asked for.
+      clearStopwatch(currentUserId())
+      setTimer(null)
       navigate('/history')
     } catch (err) {
       setSaveError(`Could not save this session: ${err.message}`)
@@ -492,50 +591,69 @@ export default function LogWorkout() {
       {/* Session time.
           The live readout while logging, and the editable field when editing a session
           that was already saved. One place for both, because it is the same fact: how
-          long this workout took. */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
-        <Clock size={15} color="var(--ink-muted)" />
-        <span style={{ fontSize: 'var(--type-subhead)', color: 'var(--ink-muted)' }}>Session time</span>
+          long this workout took.
 
-        {isEditMode ? (
-          <>
-            <input
-              type="number"
-              inputMode="numeric"
-              min="0"
-              max="24"
-              placeholder="h"
-              aria-label="Duration in hours"
-              value={durationHours === null ? '' : durationHours}
-              onChange={e => setDurationHours(e.target.value === '' ? null : Number(e.target.value))}
-              className="tnum"
-              style={{ width: 64, textAlign: 'center', padding: '8px 6px' }}
-            />
-            <span style={{ color: 'var(--ink-muted)', fontSize: 'var(--type-subhead)' }}>h</span>
-            <input
-              type="number"
-              inputMode="numeric"
-              min="0"
-              max="59"
-              placeholder="m"
-              aria-label="Duration in minutes"
-              value={durationMinutes === null ? '' : durationMinutes}
-              onChange={e => setDurationMinutes(e.target.value === '' ? null : Number(e.target.value))}
-              className="tnum"
-              style={{ width: 64, textAlign: 'center', padding: '8px 6px' }}
-            />
-            <span style={{ color: 'var(--ink-muted)', fontSize: 'var(--type-subhead)' }}>m</span>
-            {durationHours === null && durationMinutes === null && durationSeconds !== null && (
-              <span style={{ fontSize: 'var(--type-fine)', color: 'var(--ink-muted)' }}>
-                recorded {formatDuration(durationSeconds)}
+          The clock is started by hand. Opening the Log page used to start it by
+          itself, which meant that merely looking at the app recorded time nobody
+          spent training. */}
+      <div style={{ marginBottom: 16 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: isEditMode ? 0 : 10, flexWrap: 'wrap' }}>
+          <Clock size={15} color="var(--ink-muted)" />
+          <span style={{ fontSize: 'var(--type-subhead)', color: 'var(--ink-muted)' }}>Session time</span>
+
+          {isEditMode ? (
+            <>
+              <input
+                type="number"
+                inputMode="numeric"
+                min="0"
+                max="24"
+                placeholder="h"
+                aria-label="Duration in hours"
+                value={durationHours === null ? '' : durationHours}
+                onChange={e => {
+                  setDurationTouched(true)
+                  setDurationHours(e.target.value === '' ? null : Number(e.target.value))
+                }}
+                className="tnum"
+                style={{ width: 64, textAlign: 'center', padding: '8px 6px' }}
+              />
+              <span style={{ color: 'var(--ink-muted)', fontSize: 'var(--type-subhead)' }}>h</span>
+              <input
+                type="number"
+                inputMode="numeric"
+                min="0"
+                max="59"
+                placeholder="m"
+                aria-label="Duration in minutes"
+                value={durationMinutes === null ? '' : durationMinutes}
+                onChange={e => {
+                  setDurationTouched(true)
+                  setDurationMinutes(e.target.value === '' ? null : Number(e.target.value))
+                }}
+                className="tnum"
+                style={{ width: 64, textAlign: 'center', padding: '8px 6px' }}
+              />
+              <span style={{ color: 'var(--ink-muted)', fontSize: 'var(--type-subhead)' }}>m</span>
+              {durationHours === null && durationMinutes === null && durationSeconds !== null && (
+                <span style={{ fontSize: 'var(--type-fine)', color: 'var(--ink-muted)' }}>
+                  recorded {formatDuration(durationSeconds)}
+                </span>
+              )}
+            </>
+          ) : (
+            <>
+              <span style={{ fontSize: 'var(--type-title)', fontWeight: 600, color: 'var(--ink)' }}>
+                <TimerReadout timer={timer} />
               </span>
-            )}
-          </>
-        ) : (
-          <span style={{ fontSize: 'var(--type-title)', fontWeight: 600, color: 'var(--ink)' }}>
-            <LiveClock startedAt={startedAt} />
-          </span>
-        )}
+              <span style={{ fontSize: 'var(--type-fine)', color: 'var(--ink-muted)' }}>
+                {timerStateLabel(timer)}
+              </span>
+            </>
+          )}
+        </div>
+
+        {!isEditMode && <TimerControls timer={timer} onStart={handleStartTimer} onPause={handlePauseTimer} onStop={handleStopTimer} onReset={handleResetTimer} />}
       </div>
 
       {/* Exercise logs */}
@@ -773,17 +891,28 @@ function titleCase(value) {
  * it keep counting when the tab is hidden or the app is closed: coming back after ten
  * minutes shows ten minutes more, not zero.
  */
-function LiveClock({ startedAt }) {
+/**
+ * The elapsed time, as a running readout.
+ *
+ * It re-renders once a second while the clock is counting, but the value it shows is
+ * always derived from the stored instants rather than accumulated from ticks. That is
+ * what makes it keep counting when the tab is hidden or the app is closed: coming back
+ * after ten minutes shows ten minutes more, not zero.
+ *
+ * A paused or stopped measurement does not tick at all — its value is fixed, and
+ * re-rendering it every second would be work for nothing.
+ */
+function TimerReadout({ timer }) {
   const [now, setNow] = useState(() => Date.now())
+  const running = isRunning(timer)
 
   useEffect(() => {
-    if (!startedAt) return undefined
+    if (!running) return undefined
     // A backgrounded tab throttles its timers, so the interval is a nudge to re-read the
     // clock rather than the thing that counts. One second is enough for a display that
-    // only shows minutes.
+    // only shows seconds.
     const id = setInterval(() => setNow(Date.now()), 1000)
-    // Coming back to the tab should show the right time immediately, not up to a second
-    // later.
+    // Coming back to the tab should show the right time immediately.
     const onVisible = () => {
       if (document.visibilityState === 'visible') setNow(Date.now())
     }
@@ -792,11 +921,60 @@ function LiveClock({ startedAt }) {
       clearInterval(id)
       document.removeEventListener('visibilitychange', onVisible)
     }
-  }, [startedAt])
+  }, [running])
 
-  if (!startedAt) return null
+  // The clock is read from the stored instants, so a stale `now` cannot make the
+  // readout wrong — it can only make it a second behind. When a segment has just
+  // begun, `now - runningSince` is negative and clamps to zero, which is exactly what
+  // the elapsed time is at that instant.
+  //
   // formatStopwatch, not formatDuration: this is a running counter, so it shows seconds
   // and reads as mm:ss the way a phone's own timer does. formatDuration drops the
   // seconds once a minute is reached, which would make the clock look stuck.
-  return <span className="tnum">{formatStopwatch(now - startedAt)}</span>
+  return <span className="tnum">{formatStopwatch(elapsedMs(timer, now))}</span>
+}
+
+/** What the measurement is doing, in words. */
+function timerStateLabel(timer) {
+  if (!timer) return 'not started'
+  if (timer.finished) return 'stopped'
+  if (isRunning(timer)) return 'running'
+  return 'paused'
+}
+
+/**
+ * The four controls.
+ *
+ * Which ones are offered depends on where the measurement is, so that there is only
+ * ever one sensible next action. Pause and Stop differ in what they mean rather than
+ * in what they do: a paused measurement can be resumed, a stopped one is final.
+ */
+function TimerControls({ timer, onStart, onPause, onStop, onReset }) {
+  const running = isRunning(timer)
+  const paused = Boolean(timer) && !running && !timer.finished
+  const stopped = Boolean(timer) && timer.finished
+
+  // Every control is a ghost pill. The Save button below is the page's primary action,
+  // and two competing primaries on one screen is one too many.
+  const button = (label, onClick, key) => (
+    <button
+      key={key}
+      onClick={onClick}
+      className="btn-secondary"
+      style={{ minHeight: 44, padding: '10px 18px', fontSize: 'var(--type-subhead)' }}
+    >
+      {label}
+    </button>
+  )
+
+  return (
+    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+      {!timer && button('Start', onStart, 'start')}
+      {running && button('Pause', onPause, 'pause')}
+      {running && button('Stop', onStop, 'stop')}
+      {paused && button('Resume', onStart, 'resume')}
+      {paused && button('Stop', onStop, 'stop')}
+      {stopped && button('Start over', onReset, 'reset')}
+    </div>
+  )
 }

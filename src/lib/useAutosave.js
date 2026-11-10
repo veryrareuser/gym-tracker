@@ -57,9 +57,15 @@ export default function useAutosave(session, { enabled = true } = {}) {
     if (!enabled || !current || inFlightRef.current) return
     // A draft with no logged set and no note is not a workout yet. Same rule the local
     // mirror uses, so opening the page alone never creates a cloud draft.
+    //
+    // A measurement is content too. The draft is what carries the timer to another
+    // device, and a workout that was started but not yet written down would otherwise
+    // lose its clock the moment the tab closed.
     const hasContent =
       current.exercise_logs.some(l => l.set_entries.some(s => s.weight || s.reps)) ||
-      (current.notes || '').trim().length > 0
+      (current.notes || '').trim().length > 0 ||
+      current.duration_seconds !== undefined ||
+      Boolean(current.started_at)
     if (!hasContent) return
 
     inFlightRef.current = true
