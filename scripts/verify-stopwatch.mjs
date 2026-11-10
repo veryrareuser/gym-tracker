@@ -178,6 +178,20 @@ const clickControl = label => `(() => {
   return 'clicked'
 })()`
 
+/** The header's box, and where its pieces ended up. */
+const readHeader = `(() => {
+  const header = document.querySelector('.screen').firstElementChild
+  const title = header.querySelector('h1')
+  const date = header.querySelector('input[type="date"]')
+  return JSON.stringify({
+    scroll: header.scrollWidth,
+    client: header.clientWidth,
+    dateRight: date ? Math.round(date.getBoundingClientRect().right) : null,
+    titleHeight: title ? Math.round(title.getBoundingClientRect().height) : null,
+    viewport: window.innerWidth,
+  })
+})()`
+
 /** Fill in one set on the first exercise card, so the workout can be saved. */
 const fillASet = `(() => {
   const setValue = (el, v) => {
@@ -303,6 +317,14 @@ try {
 
   await send('Runtime.enable')
   await send('Page.enable')
+  // A phone. The header has to fit on a 390px screen, which is where it used to
+  // overflow — the layout problem was invisible on a desktop viewport.
+  await send('Emulation.setDeviceMetricsOverride', {
+    width: 390,
+    height: 844,
+    deviceScaleFactor: 2,
+    mobile: true,
+  })
 
   console.log('1. signs in')
   await send('Page.navigate', { url: `${ORIGIN}${BASE}` })
@@ -344,6 +366,21 @@ try {
 
   const sw1 = JSON.parse(await evaluate(readStopwatch))
   check('and nothing was stored', Object.keys(sw1).length === 0, JSON.stringify(sw1))
+
+  console.log('\n2b. the header fits on a phone')
+  // The header once held the back button, the title, the draft chip, the autosave chip
+  // and the date picker in one row: about 520px of content in a 356px box on a 390px
+  // phone. The date picker was pushed off the right edge, so the date of the workout
+  // could not be changed at all. Nothing else caught it — lint, the build and every
+  // other suite were perfectly happy with a header nobody could use.
+  const header = JSON.parse(await evaluate(readHeader))
+  check(
+    'the header does not overflow',
+    header.scroll <= header.client,
+    `content ${header.scroll}px in a ${header.client}px box`,
+  )
+  check('the date picker is inside the viewport', header.dateRight <= header.viewport, `right edge at ${header.dateRight}, viewport ${header.viewport}`)
+  check('and the title is on one line', header.titleHeight < 32, `${header.titleHeight}px tall`)
 
   console.log('\n3. pressing Start begins the measurement')
   check('Start was clicked', (await evaluate(clickControl('Start'))) === 'clicked')
@@ -405,13 +442,17 @@ try {
   )
   const draftRows = await draftRes.json()
   const draft = Array.isArray(draftRows) ? draftRows[0] : null
+  // The clock is read *after* the query, because the elapsed time keeps growing
+  // between the two reads and the draft's answer is computed from the moment the
+  // query came back.
+  const clock4b = JSON.parse(await evaluate(readClock))
   check('a draft was written', Boolean(draft), JSON.stringify(draftRows))
   if (draft) {
     check('it carries the start of the current segment', Boolean(draft.started_at), String(draft.started_at))
     check('and the time already counted', Number.isFinite(draft.duration_seconds), String(draft.duration_seconds))
     if (draft.started_at) {
       const fromDraft = (draft.duration_seconds || 0) + (Date.now() - Date.parse(draft.started_at)) / 1000
-      const shown = clockToSeconds(clock4.clock)
+      const shown = clockToSeconds(clock4b.clock)
       check(
         'and the two together give the elapsed time',
         shown !== null && Math.abs(fromDraft - shown) <= 2,

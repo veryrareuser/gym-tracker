@@ -516,76 +516,96 @@ export default function LogWorkout() {
 
   return (
     <div className="screen">
-      {/* Header */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 8,
-          paddingTop: 'calc(env(safe-area-inset-top) + 8px)',
-          paddingBottom: 12,
-        }}
-      >
-        <button onClick={() => navigate(-1)} aria-label="Back" className="hit" style={{ marginLeft: -10 }}>
-          <ArrowLeft size={24} color="var(--primary)" />
-        </button>
-        <h1 className="screen-title" style={{ fontSize: 'var(--type-title)', letterSpacing: 'var(--tracking-title)', flex: 1 }}>
-          {isEditMode ? 'Edit Session' : 'Log Workout'}
-        </h1>
-        {hasDraft && !isEditMode && (
-          <button onClick={discardCurrentDraft} className="chip" style={{ minHeight: 36 }}>
-            <RotateCcw size={14} /> {formatDate(date)}
+      {/* Header.
+          Two rows, and the split is not cosmetic.
+
+          One row cannot hold the back button, the title, the draft chip, the autosave
+          chip and the date picker: measured on a 390px phone that comes to about 520px
+          of content in a 356px box. The date picker was the casualty — it was pushed
+          clean off the right edge, so the date of the workout could not be changed at
+          all.
+
+          The first row keeps what the page is: where you are and what day it is. The
+          second row carries the two things that only sometimes exist. */}
+      <div style={{ paddingTop: 'calc(env(safe-area-inset-top) + 8px)', paddingBottom: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <button onClick={() => navigate(-1)} aria-label="Back" className="hit" style={{ marginLeft: -10 }}>
+            <ArrowLeft size={24} color="var(--primary)" />
           </button>
-        )}
-        {/* Autosave is quiet by design — it should not compete with the workout for
-            attention. But "Saved" must never appear before the write has actually
-            succeeded. The earlier version showed the chip while the request was in flight,
-            so a failed save looked identical to a successful one — which is precisely how
-            this went unnoticed. The state here is 'saved' only once it is true. */}
-        {!isEditMode && autosaveState && (
-          <span
-            className="chip"
-            role="status"
+          <h1
+            className="screen-title"
             style={{
-              minHeight: 36,
-              pointerEvents: 'none',
-              opacity: 0.75,
-              color: autosaveState === 'failed' ? 'var(--destructive)' : 'var(--ink-muted)',
+              fontSize: 'var(--type-title)',
+              letterSpacing: 'var(--tracking-title)',
+              flex: 1,
+              minWidth: 0,
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
             }}
           >
-            {autosaveState === 'saving' && 'Saving…'}
-            {autosaveState === 'saved' && 'Saved'}
-            {autosaveState === 'failed' && 'Not saved'}
-          </span>
-        )}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-          <input
-            type="date"
-            value={date}
-            max={todayISO()}
-            aria-label="Session date"
-            onChange={e => setDate(e.target.value)}
-            style={{ width: 'auto', flexShrink: 0, fontSize: 'var(--type-subhead)', padding: '0 10px' }}
-          />
-          {/* Standing guard rather than an error message. If the badge is absent, the
-              date is not today — which is the one thing worth noticing here, and the
-              thing that was previously silent. */}
-          {date === todayISO() ? (
-            <span
-              className="tnum"
-              style={{ fontSize: 'var(--type-fine)', color: 'var(--ink-muted)', whiteSpace: 'nowrap' }}
-            >
-              Today
-            </span>
-          ) : (
-            <span
-              className="tnum"
-              style={{ fontSize: 'var(--type-fine)', color: 'var(--destructive)', whiteSpace: 'nowrap' }}
-            >
-              Not today
-            </span>
-          )}
+            {isEditMode ? 'Edit Session' : 'Log Workout'}
+          </h1>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+            <input
+              type="date"
+              value={date}
+              max={todayISO()}
+              aria-label="Session date"
+              onChange={e => setDate(e.target.value)}
+              style={{ width: 'auto', flexShrink: 0, fontSize: 'var(--type-subhead)', padding: '0 10px' }}
+            />
+            {/* Standing guard rather than an error message. If the badge is absent, the
+                date is not today — which is the one thing worth noticing here, and the
+                thing that was previously silent. */}
+            {date === todayISO() ? (
+              <span
+                className="tnum"
+                style={{ fontSize: 'var(--type-fine)', color: 'var(--ink-muted)', whiteSpace: 'nowrap' }}
+              >
+                Today
+              </span>
+            ) : (
+              <span
+                className="tnum"
+                style={{ fontSize: 'var(--type-fine)', color: 'var(--destructive)', whiteSpace: 'nowrap' }}
+              >
+                Not today
+              </span>
+            )}
+          </div>
         </div>
+
+        {(hasDraft || autosaveState) && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
+            {hasDraft && !isEditMode && (
+              <button onClick={discardCurrentDraft} className="chip" style={{ minHeight: 36 }}>
+                <RotateCcw size={14} /> {formatDate(date)}
+              </button>
+            )}
+            {/* Autosave is quiet by design — it should not compete with the workout for
+                attention. But "Saved" must never appear before the write has actually
+                succeeded. The earlier version showed the chip while the request was in flight,
+                so a failed save looked identical to a successful one — which is precisely how
+                this went unnoticed. The state here is 'saved' only once it is true. */}
+            {!isEditMode && autosaveState && (
+              <span
+                className="chip"
+                role="status"
+                style={{
+                  minHeight: 36,
+                  pointerEvents: 'none',
+                  opacity: 0.75,
+                  color: autosaveState === 'failed' ? 'var(--destructive)' : 'var(--ink-muted)',
+                }}
+              >
+                {autosaveState === 'saving' && 'Saving…'}
+                {autosaveState === 'saved' && 'Saved'}
+                {autosaveState === 'failed' && 'Not saved'}
+              </span>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Session time.
