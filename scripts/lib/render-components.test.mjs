@@ -34,6 +34,7 @@ import { RENDER_REGIONS, RENDER_KEY } from '../../src/lib/muscles.js'
 import SignIn from '../../src/components/SignIn.jsx'
 import Layout from '../../src/components/Layout.jsx'
 import StatCards from '../../src/components/StatCards.jsx'
+import TrainingTime from '../../src/components/TrainingTime.jsx'
 import ActivityHeatmap from '../../src/components/ActivityHeatmap.jsx'
 import MuscleBalance from '../../src/components/MuscleBalance.jsx'
 import Dashboard from '../../src/pages/Dashboard.jsx'
@@ -57,6 +58,10 @@ const perDay = [
 ]
 const sessions = perDay.map(([date, sets], i) => ({
   id: 's' + i, date,
+  // The measured length of the session, which the time statistics read. The sessions
+  // before the stopwatch existed have no duration, and that absence is meaningful:
+  // an untimed workout is not a zero-length workout.
+  duration_seconds: i % 4 === 0 ? null : 3600 + i * 300,
   exercise_logs: [{
     id: 'l' + i, exercise_id: exercises[i % exercises.length].id,
     _name: exercises[i % exercises.length].name,
@@ -152,6 +157,10 @@ const cases = [
   ['SessionDetail', () => routed(createElement(SessionDetail))],
   // The Stats sections, which do take data.
   ['StatCards', () => createElement(StatCards, { sessions })],
+  ['TrainingTime', () => createElement(TrainingTime, { sessions })],
+  ['TrainingTime, no sessions', () => createElement(TrainingTime, { sessions: [] })],
+  ['TrainingTime, untimed sessions', () =>
+    createElement(TrainingTime, { sessions: [{ id: 's1', date: '2026-10-14' }] })],
   ['ActivityHeatmap', () => createElement(ActivityHeatmap, { sessions })],
   ['MuscleBalance', () => createElement(MuscleBalance, { sessions, exercises })],
   ['all Stats sections together', () => createElement('div', null,

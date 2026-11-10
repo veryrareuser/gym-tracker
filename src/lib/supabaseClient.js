@@ -1,5 +1,5 @@
 // src/lib/supabaseClient.js
-import { createClient } from '@supabase/supabase-js'
+import { PostgrestClient } from '@supabase/postgrest-js'
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -20,12 +20,18 @@ let currentToken = null
 export function setSessionToken(token) {
   currentToken = token || null
   supabase = base
-    ? createClient(base.url, base.key, {
-        auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
-        db: { schema: 'public' },
-        global: {
-          headers: currentToken ? { 'X-Session-Token': currentToken } : {},
+    ? new PostgrestClient(`${base.url}/rest/v1`, {
+        headers: {
+          // The publishable key identifies the project and the role. The role is what
+          // the RLS policies are written against, so it has to be sent as a bearer
+          // token exactly as supabase-js sent it.
+          apikey: base.key,
+          Authorization: `Bearer ${base.key}`,
+          // The session token. This is the whole of the app's authentication: RLS
+          // resolves it inside private.current_account().
+          ...(currentToken ? { 'X-Session-Token': currentToken } : {}),
         },
+        schema: 'public',
       })
     : null
 }

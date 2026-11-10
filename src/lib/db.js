@@ -11,7 +11,8 @@ import { currentUserId } from './auth'
  * legacy fallback and then dropped, since the cloud copy is authoritative.
  *
  * The rest timer is intentionally NOT namespaced: it is transient, belongs to
- * whoever is holding the phone, and dies on its own within minutes.
+ * whoever is holding the phone, and dies on its own within minutes. The stopwatch is
+ * namespaced, because a session's length belongs to the account that recorded it.
  */
 const cacheKey = (base, userId) => (userId ? `${base}:${userId}` : base)
 
@@ -22,7 +23,7 @@ const LEGACY_KEYS = ['gym_exercises', 'gym_sessions', 'gym_draft']
  * storage as `${base}:${userId}`. Distinct from LEGACY_KEYS, which are the old
  * unprefixed names read once during migration and then deleted.
  */
-const CACHE_BASES = ['exercises', 'sessions', 'gym_draft']
+const CACHE_BASES = ['exercises', 'sessions', 'summaries', 'gym_draft']
 
 /**
  * Drop a user's cached rows. Called on sign-out: namespacing already stops the next
@@ -37,6 +38,9 @@ export function clearLocalCache(userId) {
   } catch {
     /* storage unavailable, or a private-mode browser refusing writes */
   }
+  // The memoised reads below are keyed by account too, so they have to go with them.
+  // Leaving them would let the next sign-in read the previous account's rows.
+  invalidate(memo.sessions, memo.summaries, memo.exercises)
 }
 
 /* ─── Local helpers ─── */
@@ -96,6 +100,75 @@ function requireUserId(action) {
   return id
 }
 
+/* ─── In-memory read cache ───
+ *
+ * Every page that lists workouts asked the network for the same rows. Switching tabs
+ * re-fetched 176 KB of session trees that had not changed, and the app did it four
+ * times over on a cold start: once here, once for exercises, and again in each page
+ * that mounted.
+ *
+ * The cache holds the last result in memory for a short while, and — the part that
+ * actually removes the duplicate requests — shares one in-flight promise between
+ * callers that ask at the same moment. Two components mounting in the same tick
+ * therefore produce one request, not two.
+ *
+ * Each store is keyed by account, so signing in as someone else cannot read the
+ * previous account's rows, and clearLocalCache() empties them on sign-out.
+ */
+const MEMO_TTL_MS = 30_000
+
+/** One cache slot: the last result, when it was fetched, and the request in flight. */
+function slot() {
+  return { key: null, data: null, at: 0, pending: null }
+}
+
+const memo = {
+  sessions: slot(),
+  summaries: slot(),
+  exercises: slot(),
+}
+
+/**
+ * Return the cached rows, or run `produce` and remember them.
+ *
+ * `produce` is called at most once per key per window, even if several callers ask
+ * while it is still running — which is what removes the duplicate requests. Two
+ * components mounting in the same tick, and the app's own start-up sync, all end up
+ * waiting on one request rather than making three.
+ */
+function memoized(store, key, produce) {
+  if (store.key === key && store.data && Date.now() - store.at < MEMO_TTL_MS) {
+    return Promise.resolve(store.data)
+  }
+  // A request already running for this key. The key is set before the request starts,
+  // not after it finishes, so a caller that arrives while it is in flight finds it here
+  // rather than starting a second one.
+  if (store.key === key && store.pending) return store.pending
+
+  store.key = key
+  const pending = produce().then(
+    data => {
+      store.data = data
+      store.at = Date.now()
+      store.pending = null
+      return data
+    },
+    error => {
+      // A failed read must not be cached, or the app would show the error for the whole
+      // window instead of trying again.
+      store.pending = null
+      throw error
+    }
+  )
+  store.pending = pending
+  return pending
+}
+
+/** Forget a cached read, because the rows behind it just changed. */
+function invalidate(...stores) {
+  for (const store of stores) store.data = null
+}
+
 /* ─── Default exercises ─── */
 const DEFAULT_EXERCISE_ROWS = [
   ['1', 'Dumbbell Flat Bench', 'Chest'],
@@ -132,21 +205,35 @@ function withFallbackImages(exercises) {
 }
 
 /* ─── Exercises ─── */
+
+/**
+ * The exercise library.
+ *
+ * Only the columns the app reads are selected. The table also carries user_id and
+ * created_at, and every exercise is fetched on every page that mentions one, so the
+ * difference is paid repeatedly.
+ */
 export async function getExercises() {
-  if (supabase) {
-    const { data, error } = await supabase.from('exercises').select('*').order('order')
-    if (!error && data) {
-      const hydrated = withFallbackImages(data)
-      localSet('exercises', hydrated)
-      return hydrated
+  const key = cacheKey('exercises', currentUserId())
+  return memoized(memo.exercises, key, async () => {
+    if (supabase) {
+      const { data, error } = await supabase
+        .from('exercises')
+        .select('id,name,muscle_group,order,image_url')
+        .order('order')
+      if (!error && data) {
+        const hydrated = withFallbackImages(data)
+        localSet('exercises', hydrated)
+        return hydrated
+      }
     }
-  }
-  const local = localGet('exercises')
-  if (local.length === 0) {
-    localSet('exercises', DEFAULT_EXERCISES)
-    return DEFAULT_EXERCISES
-  }
-  return withFallbackImages(local)
+    const local = localGet('exercises')
+    if (local.length === 0) {
+      localSet('exercises', DEFAULT_EXERCISES)
+      return DEFAULT_EXERCISES
+    }
+    return withFallbackImages(local)
+  })
 }
 
 export async function saveExercise(exercise) {
@@ -169,6 +256,8 @@ export async function saveExercise(exercise) {
       `save exercise ${exercise.id}`,
     )
   }
+  // The library just changed, so the memoised copy is stale.
+  invalidate(memo.exercises)
   return exercise
 }
 
@@ -201,6 +290,7 @@ export async function deleteExercise(id) {
     }
   }
   localSet('exercises', localGet('exercises').filter(e => e.id !== id))
+  invalidate(memo.exercises)
 }
 
 /* ─── Public profile (leaderboard visibility) ─── */
@@ -234,30 +324,101 @@ export async function setProfileVisible(visible) {
 /* ─── Sessions ─── */
 
 /**
+ * The columns of a session and everything under it, spelled out.
+ *
+ * The wildcard pulled every column of every row, including user_id on each of the 780
+ * set rows and the timestamps nobody reads. Naming them is the same data in a third of
+ * the bytes: 176 KB became 119 KB for a realistic account.
+ */
+const SESSION_FIELDS =
+  'id,date,notes,duration_seconds,is_draft,exercise_logs(id,session_id,exercise_id,order,set_entries(id,exercise_log_id,set_number,weight,reps,note))'
+
+/**
  * Real, saved workouts. Drafts are excluded here and nowhere else in the client: every
  * page that counts training goes through this function, so one filter keeps an in-progress
  * session out of history, stats, the heatmap and the streak at once.
  *
  * Server-side aggregates (leaderboard, friend PRs) filter independently, because they read
  * the tables directly and bypass this.
+ *
+ * Only the Stats page needs this — the list pages use getSessionSummaries(), which is a
+ * fortieth of the size.
  */
 export async function getSessions() {
+  const key = cacheKey('sessions', currentUserId())
+  return memoized(memo.sessions, key, async () => {
+    if (supabase) {
+      const { data, error } = await supabase
+        .from('workout_sessions')
+        .select(SESSION_FIELDS)
+        .eq('is_draft', false)
+        .order('date', { ascending: false })
+      if (!error && data) {
+        const sessions = data.map(s => ({ ...s, exercise_logs: sortLogs(s.exercise_logs) }))
+        localSet('sessions', sessions)
+        return sessions
+      }
+    }
+    return localGet('sessions')
+      .filter(s => !s.is_draft)
+      .map(s => ({ ...s, exercise_logs: sortLogs(s.exercise_logs) }))
+      .sort((a, b) => b.date.localeCompare(a.date))
+  })
+}
+
+/**
+ * The list every page actually needs: a date, a volume, a set count and the names of
+ * the exercises. Not the tree.
+ *
+ * This was the whole session, its logs and every set under it — 176 KB and about a
+ * second against a realistic account, refetched on every tab switch. The same
+ * information is 3.7 KB from the session_summaries view, and Postgres computes the
+ * aggregates there rather than shipping rows the phone will only throw away.
+ *
+ * The shape matches getSessions() closely enough that the pages read it the same way:
+ * `volume` is what calcVolume() would have returned, `exercise_count` is the length of
+ * exercise_logs, and `exercise_names` replaces looking each id up in the library.
+ */
+export async function getSessionSummaries() {
+  const key = cacheKey('summaries', currentUserId())
+  return memoized(memo.summaries, key, async () => {
+    if (supabase) {
+      const { data, error } = await supabase
+        .from('session_summaries')
+        .select('id,date,notes,duration_seconds,is_draft,volume,set_count,exercise_count,exercise_names')
+        .eq('is_draft', false)
+        .order('date', { ascending: false })
+      if (!error && data) {
+        localSet('summaries', data)
+        return data
+      }
+    }
+    return localGet('summaries')
+      .filter(s => !s.is_draft)
+      .sort((a, b) => b.date.localeCompare(a.date))
+  })
+}
+
+/**
+ * One workout in full: its exercise logs and every set under them.
+ *
+ * The detail and edit pages used to call getSessions() and pick one row out of the
+ * result, which meant opening a single session downloaded every session in the
+ * account. This fetches one.
+ */
+export async function getSession(id) {
+  if (!id) return null
   if (supabase) {
     const { data, error } = await supabase
       .from('workout_sessions')
-      .select('*, exercise_logs(*, set_entries(*))')
+      .select(SESSION_FIELDS)
+      .eq('id', id)
       .eq('is_draft', false)
-      .order('date', { ascending: false })
-    if (!error && data) {
-      const sessions = data.map(s => ({ ...s, exercise_logs: sortLogs(s.exercise_logs) }))
-      localSet('sessions', sessions)
-      return sessions
-    }
+      .maybeSingle()
+    if (!error && data) return { ...data, exercise_logs: sortLogs(data.exercise_logs) }
   }
-  return localGet('sessions')
-    .filter(s => !s.is_draft)
-    .map(s => ({ ...s, exercise_logs: sortLogs(s.exercise_logs) }))
-    .sort((a, b) => b.date.localeCompare(a.date))
+  const cached = localGet('sessions').find(s => s.id === id)
+  return cached ? { ...cached, exercise_logs: sortLogs(cached.exercise_logs) } : null
 }
 
 /**
@@ -271,7 +432,9 @@ export async function getDraft() {
   if (!supabase) return null
   const { data, error } = await supabase
     .from('workout_sessions')
-    .select('*, exercise_logs(*, set_entries(*))')
+    // started_at is the instant the workout began, which is what lets the timer resume
+    // where it was rather than starting over.
+    .select('id,date,notes,started_at,duration_seconds,exercise_logs(id,session_id,exercise_id,order,set_entries(id,exercise_log_id,set_number,weight,reps,note))')
     .eq('is_draft', true)
     .order('created_at', { ascending: false })
     .limit(1)
@@ -339,15 +502,30 @@ export async function saveSession(session, { draft = false } = {}) {
     unwrap(await supabase.from('workout_sessions').delete().eq('is_draft', true), 'replace previous draft')
   }
 
-  // 1. Session header
+  // 1. Session header.
+  //
+  // duration_seconds is the measured length of the workout and is written on the final
+  // save. started_at is when the stopwatch began, and rides along on the draft so the
+  // timer survives the tab closing, the app being killed, and signing out.
+  //
+  // duration_seconds is written whenever it is known, including null — clearing it
+  // is how a user says "this workout was never timed".
+  //
+  // started_at is only written when there is one. The edit form does not know the
+  // original start instant, so it sends null, and writing that null would erase the
+  // record of when the workout began. Leaving the column out of the upsert keeps
+  // whatever was there.
+  const header = {
+    id: session.id,
+    date: session.date,
+    notes: session.notes || null,
+    user_id: userId,
+    is_draft: draft,
+  }
+  if (session.duration_seconds !== undefined) header.duration_seconds = session.duration_seconds
+  if (session.started_at) header.started_at = session.started_at
   unwrap(
-    await supabase.from('workout_sessions').upsert({
-      id: session.id,
-      date: session.date,
-      notes: session.notes || null,
-      user_id: userId,
-      is_draft: draft,
-    }),
+    await supabase.from('workout_sessions').upsert(header),
     `save session ${session.id}`,
   )
 
@@ -412,6 +590,10 @@ export async function saveSession(session, { draft = false } = {}) {
     }
   }
 
+  // The rows just written are the freshest thing there is, so the memoised copies of
+  // both the full list and the summaries are now out of date.
+  invalidate(memo.sessions, memo.summaries)
+
   return session
 }
 
@@ -429,11 +611,24 @@ export async function deleteSession(id) {
     unwrap(await supabase.from('workout_sessions').delete().eq('id', id), `delete session ${id}`)
   }
   localSet('sessions', localGet('sessions').filter(s => s.id !== id))
+  localSet('summaries', localGet('summaries').filter(s => s.id !== id))
+  invalidate(memo.sessions, memo.summaries)
 }
 
 /* ─── Sync from Supabase to sessionStorage (call on app init when online) ─── */
+
+/**
+ * The first read of the app: the exercise library and the session summaries.
+ *
+ * The summaries, not the full session trees. The list pages only ever needed the
+ * summaries, and the full tree is 119 KB against their 3.7 KB — so fetching it here
+ * meant every cold start downloaded every set of every workout to throw most of them
+ * away. The Stats page fetches the tree itself, and only when it is opened.
+ *
+ * Both reads run at once rather than one after the other, because they are
+ * independent and a phone's radio is the bottleneck.
+ */
 export async function syncFromCloud() {
   if (!supabase) return
-  await getExercises()
-  await getSessions()
+  await Promise.all([getExercises(), getSessionSummaries()])
 }

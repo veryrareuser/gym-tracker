@@ -32,3 +32,6 @@ public/exercises.json
 
 # Test bundles written by the verify:* harnesses
 scripts/lib/.*.bundle.mjs
+
+# Browser profiles left behind by the CDP suites
+.tmp-*-profile

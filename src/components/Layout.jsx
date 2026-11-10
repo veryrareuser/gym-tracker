@@ -2,7 +2,6 @@
 import { useState } from 'react'
 import { Outlet, NavLink } from 'react-router-dom'
 import { House, Dumbbell, CalendarDays, ChartLine, ListChecks, LogOut, Shield } from 'lucide-react'
-import RestTimer from './RestTimer'
 import ConfirmDialog from './ConfirmDialog'
 import AccountSecurity from './AccountSecurity'
 
@@ -65,8 +64,6 @@ export default function Layout({ onSignOut, username }) {
       <main style={{ flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
         <Outlet />
       </main>
-
-      <RestTimer />
 
       {/* Tab bar. The spec has no bottom tab bar; this stretches
           floating-sticky-bar, which is its only bottom-anchored blurred chrome. */}

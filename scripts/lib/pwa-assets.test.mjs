@@ -10,7 +10,7 @@
 // The PNG dimensions are read from the IHDR chunk rather than trusted from the filename. That
 // is the point: the metadata and the image have to agree.
 
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
 
@@ -159,6 +159,28 @@ if (existsSync(dist)) {
     } catch (error) {
       check('built manifest is valid JSON', false, error.message)
     }
+  }
+
+  // The service worker is generated at build time with the list of built assets, so its
+  // presence in dist/ is the thing to check here. Its behaviour is checked in a real
+  // browser by verify:sw.
+  console.log('\nService worker\n')
+  const swFile = join(dist, 'sw.js')
+  check('dist/sw.js exists', existsSync(swFile))
+  if (existsSync(swFile)) {
+    const sw = readFileSync(swFile, 'utf8')
+    check('the worker installs and activates', /addEventListener\('install'/.test(sw) && /addEventListener\('activate'/.test(sw))
+    // The precache list must name the built assets, which is only knowable at build
+    // time — a hand-written worker would list filenames that no longer exist.
+    const builtJs = readdirSync(join(dist, 'assets')).filter(name => name.endsWith('.js'))
+    check(
+      'the precache list names the built javascript',
+      builtJs.length > 0 && builtJs.every(name => sw.includes(name)),
+      builtJs.join(', '),
+    )
+    // The API must never be cached: a cached response is signed-in training data and
+    // would be served to whoever opened the app next.
+    check('the worker never caches the API', !/supabase|rest\/v1/.test(sw))
   }
 } else {
   console.log('\n(no dist/ build found; source assets were checked)')

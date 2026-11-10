@@ -14,6 +14,7 @@ import { currentUsername } from '../lib/auth'
 import Leaderboard from '../components/Leaderboard'
 import PersonalRecords from '../components/PersonalRecords'
 import StatCards from '../components/StatCards'
+import TrainingTime from '../components/TrainingTime'
 import ActivityHeatmap from '../components/ActivityHeatmap'
 import MuscleBalance from '../components/MuscleBalance'
 
@@ -174,6 +175,8 @@ export default function Analytics() {
       {sessions.length > 0 && (
         <>
           <StatCards sessions={sessions} />
+
+          <TrainingTime sessions={sessions} />
 
           <ActivityHeatmap sessions={sessions} />
 

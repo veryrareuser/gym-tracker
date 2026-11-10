@@ -2,8 +2,8 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeft, Pencil, Dumbbell, Trash2 } from 'lucide-react'
-import { getSessions, getExercises, deleteSession } from '../lib/db'
-import { formatDate, calcVolume } from '../lib/utils'
+import { getSession, getExercises, deleteSession } from '../lib/db'
+import { formatDate, calcVolume, formatDuration } from '../lib/utils'
 import ConfirmDialog from '../components/ConfirmDialog'
 
 export default function SessionDetail() {
@@ -15,11 +15,14 @@ export default function SessionDetail() {
   const [confirming, setConfirming] = useState(false)
 
   useEffect(() => {
-    Promise.all([getSessions(), getExercises()]).then(([sessions, exs]) => {
-      setSession(sessions.find(s => s.id === sessionId) || null)
-      setExercises(exs)
+    // One session, not the whole account. This page used to load every workout in the
+    // database and pick one out of the result, which on a phone meant downloading
+    // 176 KB of other people's sessions to show this one.
+    getSession(sessionId).then(s => {
+      setSession(s)
       setLoaded(true)
     })
+    getExercises().then(setExercises)
   }, [sessionId])
 
   async function handleDelete() {
@@ -71,6 +74,7 @@ export default function SessionDetail() {
           </h1>
           <div style={{ fontSize: 'var(--type-subhead)', color: 'var(--ink-muted)' }}>
             {session.exercise_logs?.length || 0} exercises · {Math.round(calcVolume(session))} kg volume
+            {session.duration_seconds ? ` · ${formatDuration(session.duration_seconds)}` : ''}
           </div>
         </div>
         <button

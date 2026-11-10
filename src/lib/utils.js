@@ -95,3 +95,56 @@ export function getTopSet(sets) {
     return w > (parseFloat(best?.weight) || 0) ? s : best
   }, sets[0])
 }
+
+/**
+ * A duration in seconds, as "1h 05m" / "45m" / "30s".
+ *
+ * The "h with m" shape, not a decimal, because a session length is a span of time and
+ * "1h 05m" is how it is said out loud. Zero components are dropped: an hour and a
+ * half reads "1h 30m", not "1h 30m 0s".
+ */
+export function formatDuration(seconds) {
+  if (seconds === null || seconds === undefined) return ''
+  const total = Math.max(0, Math.round(Number(seconds) || 0))
+  if (total === 0) return '0s'
+
+  const h = Math.floor(total / 3600)
+  const m = Math.floor((total % 3600) / 60)
+  const s = total % 60
+
+  const parts = []
+  if (h > 0) parts.push(`${h}h`)
+  if (m > 0) parts.push(`${m}m`)
+  if (s > 0) parts.push(`${s}s`)
+  return parts.join(' ')
+}
+
+/**
+ * A duration in seconds as a decimal number of hours, e.g. 6300 -> 1.75.
+ *
+ * Used for the cumulative "time trained" totals, where the point is the size of the
+ * number rather than the exact clock reading. One decimal is enough: the total is
+ * there to be glanced at, and a hundredth of an hour is a rounding error on a figure
+ * that is itself an estimate of how long you spent lifting.
+ */
+export function formatHoursDecimal(seconds) {
+  if (seconds === null || seconds === undefined) return 0
+  return Math.round((Number(seconds) || 0) / 360) / 10
+}
+
+/**
+ * A running stopwatch readout, as "1:05:03" or "05:03".
+ *
+ * Deliberately different from formatDuration: this is a live counter, so it shows
+ * seconds and never rounds away. The "h" is dropped when it is zero, because
+ * "05:03" is what a phone's own timer shows at that point.
+ */
+export function formatStopwatch(ms) {
+  const total = Math.max(0, Math.floor((Number(ms) || 0) / 1000))
+  const h = Math.floor(total / 3600)
+  const m = Math.floor((total % 3600) / 60)
+  const s = total % 60
+  const mm = String(m).padStart(2, '0')
+  const ss = String(s).padStart(2, '0')
+  return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`
+}

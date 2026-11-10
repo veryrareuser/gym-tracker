@@ -19,6 +19,11 @@
     "verify:isolation": "node scripts/verify-isolation.mjs",
     "verify:dates": "node scripts/lib/date-helpers.test.mjs",
     "verify:storage": "node scripts/lib/browser-session.test.mjs",
+    "verify:duration": "node scripts/lib/duration.test.mjs",
+    "verify:duration-db": "node scripts/verify-duration.mjs",
+    "verify:cache": "node scripts/lib/read-cache.test.mjs",
+    "verify:sw": "node scripts/verify-sw.mjs",
+    "verify:stopwatch": "node scripts/verify-stopwatch.mjs",
     "verify:render": "node scripts/lib/render-components.test.mjs",
     "verify:geometry": "node scripts/lib/body-geometry.test.mjs",
     "verify:bodymap": "node scripts/lib/body-map-interaction.test.mjs",
@@ -29,7 +34,7 @@
     "verify:date-default": "node scripts/verify-date-default.mjs"
   },
   "dependencies": {
-    "@supabase/supabase-js": "2.116.0",
+    "@supabase/postgrest-js": "2.116.0",
     "@tailwindcss/vite": "4.3.3",
     "lucide-react": "1.53.0",
     "react": "19.3.0",

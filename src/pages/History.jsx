@@ -1,9 +1,9 @@
 // src/pages/History.jsx
 import { useEffect, useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ChevronRight, Dumbbell, Trash2, ChevronLeft } from 'lucide-react'
-import { getSessions, getExercises, deleteSession } from '../lib/db'
-import { calcVolume, todayISO } from '../lib/utils'
+import { ChevronRight, Dumbbell, Trash2, ChevronLeft, Clock } from 'lucide-react'
+import { getSessionSummaries, deleteSession } from '../lib/db'
+import { todayISO, formatDuration } from '../lib/utils'
 import ConfirmDialog from '../components/ConfirmDialog'
 
 const DAY_LABELS = ['M', 'T', 'W', 'T', 'F', 'S', 'S']
@@ -59,7 +59,6 @@ function CalendarGrid({ year, month, sessionsByDate, onDayClick }) {
 
 export default function History() {
   const [sessions, setSessions] = useState([])
-  const [exercises, setExercises] = useState([])
   const [pendingDelete, setPendingDelete] = useState(null)
   const navigate = useNavigate()
 
@@ -70,8 +69,10 @@ export default function History() {
   const [calMonth, setCalMonth] = useState(now.getMonth())
 
   useEffect(() => {
-    getSessions().then(setSessions)
-    getExercises().then(setExercises)
+    // The summaries, not the full session trees. This list shows a date, a volume, an
+    // exercise count and a couple of names — and every set of every session used to
+    // travel over the network to produce them.
+    getSessionSummaries().then(setSessions)
   }, [])
 
   const sessionsByDate = useMemo(() => {
@@ -177,9 +178,7 @@ export default function History() {
               {MONTH_LABELS[Number(m) - 1]} {y}
             </h2>
             {grouped[key].map(session => {
-              const names = (session.exercise_logs || [])
-                .map(log => exercises.find(e => e.id === log.exercise_id)?.name)
-                .filter(Boolean)
+              const names = session.exercise_names || []
               return (
                 <div key={session.id} className="card" style={{ display: 'flex', alignItems: 'center', marginBottom: 8, overflow: 'hidden' }}>
                   <button
@@ -228,13 +227,36 @@ export default function History() {
 
                     <div style={{ textAlign: 'right', flexShrink: 0 }}>
                       <div className="tnum" style={{ fontWeight: 600, fontSize: 'var(--type-subhead)', color: 'var(--primary)' }}>
-                        {Math.round(calcVolume(session))} kg
+                        {Math.round(session.volume)} kg
                       </div>
                       <div style={{ fontSize: 'var(--type-fine)', color: 'var(--ink-muted)' }}>
-                        {session.exercise_logs?.length || 0} ex
+                        {session.exercise_count || 0} ex
                       </div>
                     </div>
                   </button>
+
+                  {/* The measured length of the session. Sessions logged before the
+                      stopwatch existed have no duration, so there is nothing to show
+                      rather than a misleading zero. */}
+                  {session.duration_seconds ? (
+                    <div
+                      className="tnum"
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 4,
+                        padding: '0 10px',
+                        alignSelf: 'stretch',
+                        borderLeft: '1px solid var(--line)',
+                        color: 'var(--ink-muted)',
+                        fontSize: 'var(--type-fine)',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      <Clock size={12} />
+                      {formatDuration(session.duration_seconds)}
+                    </div>
+                  ) : null}
 
                   <button
                     onClick={() => setPendingDelete(session)}
