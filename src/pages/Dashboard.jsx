@@ -33,22 +33,19 @@ export default function Dashboard() {
       value: streak,
       unit: streak === 1 ? 'week' : 'weeks',
       icon: Flame,
-      color: 'var(--ink)',
     },
-    { label: 'Sessions', value: sessions.length, unit: 'total', icon: Dumbbell, color: 'var(--primary)' },
+    { label: 'Sessions', value: sessions.length, unit: 'total', icon: Dumbbell },
     {
       label: 'Last Volume',
       value: lastSession ? Math.round(lastSession.volume) : 0,
       unit: 'kg',
       icon: TrendingUp,
-      color: 'var(--primary)',
     },
     {
       label: 'Time',
       value: totalHours,
       unit: 'hours',
       icon: Clock,
-      color: 'var(--primary)',
     },
   ]
 
@@ -62,14 +59,14 @@ export default function Dashboard() {
       </header>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8, marginBottom: 24 }}>
-        {stats.map(({ label, value, unit, icon: Icon, color }) => (
-          <div key={label} className="card" style={{ padding: '17px 8px', textAlign: 'center' }}>
-            <Icon size={19} color={color} style={{ marginBottom: 8 }} aria-hidden="true" />
-            <div className="tnum" style={{ fontSize: 'var(--type-title)', fontWeight: 600, lineHeight: 1.1 }}>
+        {stats.map(({ label, value, unit, icon: Icon }) => (
+          <div key={label} className="card card-accent" style={{ padding: '17px 8px', textAlign: 'center' }}>
+            <Icon size={19} color="var(--nb-black)" style={{ marginBottom: 8 }} aria-hidden="true" />
+            <div className="tnum" style={{ fontSize: 'var(--type-title)', fontWeight: 700, lineHeight: 1.1 }}>
               {value}
             </div>
-            <div style={{ fontSize: 'var(--type-fine)', color: 'var(--ink-muted)', marginTop: 2 }}>{unit}</div>
-            <div style={{ fontSize: 'var(--type-fine)', color: 'var(--ink-muted)' }}>{label}</div>
+            <div style={{ fontSize: 'var(--type-fine)', color: 'var(--nb-black)', marginTop: 2, opacity: 0.7 }}>{unit}</div>
+            <div style={{ fontSize: 'var(--type-fine)', color: 'var(--nb-black)', opacity: 0.7 }}>{label}</div>
           </div>
         ))}
       </div>

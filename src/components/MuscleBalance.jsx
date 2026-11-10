@@ -151,33 +151,9 @@ export default function MuscleBalance({ sessions, exercises }) {
       </div>
 
       {/* Period selector */}
-      <div
-        role="group"
-        aria-label="Period"
-        style={{
-          display: 'inline-flex',
-          background: 'var(--fill)',
-          borderRadius: 'var(--rounded-pill)',
-          padding: 2,
-          marginBottom: 14,
-        }}
-      >
+      <div role="group" aria-label="Period" className="segmented" style={{ marginBottom: 14 }}>
         {PERIODS.map(p => (
-          <button
-            key={p.key}
-            onClick={() => changePeriod(p.key)}
-            aria-pressed={period === p.key}
-            style={{
-              border: 0,
-              background: period === p.key ? 'var(--surface)' : 'transparent',
-              color: period === p.key ? 'var(--ink)' : 'var(--ink-muted)',
-              fontSize: 'var(--type-fine)',
-              fontWeight: period === p.key ? 'var(--weight-semibold)' : 'var(--weight-regular)',
-              padding: '6px 13px',
-              borderRadius: 'var(--rounded-pill)',
-              cursor: 'pointer',
-            }}
-          >
+          <button key={p.key} onClick={() => changePeriod(p.key)} aria-pressed={period === p.key}>
             {p.label}
           </button>
         ))}
@@ -290,13 +266,15 @@ export default function MuscleBalance({ sessions, exercises }) {
                         {Math.round(sets)} sets
                       </span>
                     </div>
-                    <div style={{ height: 8, background: 'var(--fill)', borderRadius: 'var(--rounded-pill)', overflow: 'hidden' }}>
+                    <div style={{ height: 10, background: 'var(--fill-strong)', borderRadius: 0, overflow: 'hidden' }}>
                       <div
                         style={{
                           width: `${max > 0 ? Math.round((sets / max) * 100) : 0}%`,
                           height: '100%',
-                          background: 'rgb(0, 140, 60)',
-                          borderRadius: 'var(--rounded-pill)',
+                          // The palette green, with black on it rather than white: the
+                          // white version was 2.2:1 on the green.
+                          background: 'var(--success-fill)',
+                          borderRadius: 0,
                         }}
                       />
                     </div>

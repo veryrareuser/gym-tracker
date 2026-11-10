@@ -99,7 +99,16 @@ if (manifest) {
   check('start_url is the deployed app root', manifest.start_url === '/gym-tracker/', manifest.start_url)
   check('scope covers the deployed app', manifest.scope === '/gym-tracker/', manifest.scope)
   check('display is standalone', manifest.display === 'standalone', manifest.display)
-  check('background colour matches the canvas', manifest.background_color === '#f5f5f7', manifest.background_color)
+  // The canvas colour is read from the design tokens rather than written out here.
+  // A restyle changes --nb-paper, and a manifest left on the old value is a splash
+  // screen in the wrong colour — which is exactly the kind of drift this file exists
+  // to catch, so the two must not be able to disagree by accident.
+  const paper = /--nb-paper:\s*(#[0-9a-f]{6})/i.exec(readFileSync(join(root, 'src/index.css'), 'utf8'))?.[1]
+  check(
+    'background colour matches the canvas',
+    paper && manifest.background_color?.toLowerCase() === paper.toLowerCase(),
+    `${manifest.background_color} vs ${paper}`,
+  )
   check('related apps are not preferred', manifest.prefer_related_applications !== true)
 
   const icons = Array.isArray(manifest.icons) ? manifest.icons : []

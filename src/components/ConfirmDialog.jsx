@@ -31,7 +31,7 @@ export default function ConfirmDialog({
         position: 'fixed',
         inset: 0,
         zIndex: 400,
-        background: 'rgba(0,0,0,0.4)',
+        background: 'rgba(0,0,0,0.62)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -47,10 +47,11 @@ export default function ConfirmDialog({
         style={{
           width: '100%',
           maxWidth: 300,
-          borderRadius: 'var(--rounded-md)',
+          borderRadius: 0,
           overflow: 'hidden',
           background: 'var(--surface)',
-          border: '1px solid var(--line)',
+          border: '4px solid var(--outline)',
+          boxShadow: '8px 8px 0 var(--outline)',
           animation: 'rise 0.2s ease',
         }}
       >
@@ -63,13 +64,13 @@ export default function ConfirmDialog({
         <div
           style={{
             display: 'flex',
-            borderTop: '1px solid var(--line)',
+            borderTop: '3px solid var(--outline)',
           }}
         >
           <button
             onClick={onCancel}
             className="btn-quiet"
-            style={{ flex: 1, borderRight: '1px solid var(--line)', borderRadius: 0, padding: 0 }}
+            style={{ flex: 1, borderRight: '3px solid var(--outline)', borderRadius: 0, padding: 0 }}
           >
             {cancelLabel}
           </button>
@@ -79,7 +80,7 @@ export default function ConfirmDialog({
             style={{
               flex: 1,
               color: destructive ? 'var(--destructive)' : 'var(--primary)',
-              fontWeight: 600,
+              fontWeight: 700,
               borderRadius: 0,
               padding: 0,
             }}

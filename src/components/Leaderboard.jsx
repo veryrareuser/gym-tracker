@@ -288,27 +288,33 @@ export default function Leaderboard({ username }) {
               {/* Track 44x26 with a 20px knob inset 3px. The previous 51x31 track carried a
                   27px knob, which left 2px of blue at the widest point — the knob read as a
                   crescent and the control outshouted its own heading. The button keeps the
-                  global 44px min-height, so the hit target is still a full 44px. */}
+                  global 44px min-height, so the hit target is still a full 44px.
+
+                  Brutalist: square corners, a black frame, and a yellow knob. The knob
+                  is yellow rather than white because a white knob on a black frame is
+                  the same value as the frame's own edge, and the switch stops reading
+                  as a switch. */}
               <span
                 style={{
                   display: 'block',
                   position: 'relative',
                   width: 44,
                   height: 26,
-                  borderRadius: 'var(--rounded-pill)',
-                  background: profileVisible ? 'var(--primary)' : 'var(--line-control)',
+                  borderRadius: 0,
+                  border: '3px solid var(--outline)',
+                  background: profileVisible ? 'var(--nb-yellow)' : 'var(--surface)',
                   transition: 'background 0.18s ease',
                 }}
               >
                 <span
                   style={{
                     position: 'absolute',
-                    top: 3,
-                    left: profileVisible ? 21 : 3,
-                    width: 20,
-                    height: 20,
-                    borderRadius: '50%',
-                    background: '#fff',
+                    top: 2,
+                    left: profileVisible ? 19 : 2,
+                    width: 16,
+                    height: 16,
+                    borderRadius: 0,
+                    background: 'var(--nb-black)',
                     transition: 'left 0.18s ease',
                   }}
                 />

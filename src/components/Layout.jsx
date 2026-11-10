@@ -66,7 +66,11 @@ export default function Layout({ onSignOut, username }) {
       </main>
 
       {/* Tab bar. The spec has no bottom tab bar; this stretches
-          floating-sticky-bar, which is its only bottom-anchored blurred chrome. */}
+          floating-sticky-bar, which is its only bottom-anchored blurred chrome.
+
+          Brutalist: a solid block with a thick black rule on top, and the current tab
+          marked by a yellow block rather than by a coloured label — a tint of the same
+          paper is not a cue you can see across a room. */}
       <nav
         className="glass"
         style={{
@@ -78,7 +82,7 @@ export default function Layout({ onSignOut, username }) {
           maxWidth: 520,
           zIndex: 100,
           display: 'flex',
-          borderTop: '1px solid var(--line)',
+          borderTop: '4px solid var(--outline)',
           borderRadius: 0,
           paddingBottom: 'env(safe-area-inset-bottom)',
         }}
@@ -97,15 +101,17 @@ export default function Layout({ onSignOut, username }) {
               justifyContent: 'center',
               gap: 2,
               minHeight: 'var(--tab-bar-height)',
-              color: isActive ? 'var(--primary)' : 'var(--ink-muted)',
+              // The current tab is a yellow block. Black on yellow is 15:1.
+              background: isActive ? 'var(--nb-yellow)' : 'transparent',
+              color: isActive ? 'var(--nb-black)' : 'var(--ink-muted)',
               textDecoration: 'none',
               fontSize: 'var(--type-nav)',
               letterSpacing: 'var(--tracking-fine)',
-              fontWeight: isActive ? 600 : 400,
-              transition: 'color 0.15s',
+              fontWeight: isActive ? 700 : 400,
+              transition: 'color 0.15s, background-color 0.15s',
             })}
           >
-            <Icon size={22} strokeWidth={2} aria-hidden="true" />
+            <Icon size={22} strokeWidth={2.5} aria-hidden="true" />
             <span>{label}</span>
           </NavLink>
         ))}

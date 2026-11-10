@@ -190,8 +190,9 @@ export default function History() {
                       style={{
                         width: 46,
                         height: 46,
-                        borderRadius: 'var(--rounded-sm)',
-                        background: 'var(--primary-wash)',
+                        borderRadius: 0,
+                        background: 'var(--nb-yellow)',
+                        border: '2px solid var(--outline)',
                         display: 'flex',
                         flexDirection: 'column',
                         alignItems: 'center',
@@ -199,10 +200,10 @@ export default function History() {
                         flexShrink: 0,
                       }}
                     >
-                      <span style={{ fontSize: 'var(--type-headline)', fontWeight: 600, lineHeight: 1, color: 'var(--primary)' }}>
+                      <span style={{ fontSize: 'var(--type-headline)', fontWeight: 700, lineHeight: 1, color: 'var(--nb-black)' }}>
                         {Number(session.date.slice(8))}
                       </span>
-                      <span style={{ fontSize: 'var(--type-fine)', color: 'var(--primary)', textTransform: 'uppercase' }}>
+                      <span style={{ fontSize: 'var(--type-fine)', color: 'var(--nb-black)', textTransform: 'uppercase' }}>
                         {new Date(session.date + 'T00:00:00').toLocaleDateString('en-GB', { month: 'short' })}
                       </span>
                     </div>
