@@ -60,7 +60,7 @@ function checkIndex(rootLabel, file, manifest) {
   const appleLink = /<link[^>]+rel="apple-touch-icon"[^>]*>/i.exec(html)?.[0] || ''
   check(
     `${rootLabel}: 180px Apple touch icon is linked`,
-    /href="\/gym-tracker\/icons\/apple-touch-icon\.png"/.test(appleLink) && /sizes="180x180"/.test(appleLink),
+    /href="\/gym-tracker\/icons\/apple-touch-icon[^"]*\.png"/.test(appleLink) && /sizes="180x180"/.test(appleLink),
     appleLink || 'missing',
   )
 
@@ -137,8 +137,21 @@ if (manifest) {
   )
 }
 
+// The Apple touch icon's path is read out of index.html rather than written here.
+// The icon filenames carry a hash of the mark, so that a phone which cached the old
+// icon asks for the new one — which means the filename is not a constant, and a
+// hardcoded path would fail the moment the mark changed.
+const appleTouchPath = (html, base) => {
+  const link = /<link[^>]+rel="apple-touch-icon"[^>]*>/i.exec(html)?.[0] || ''
+  const href = /href="([^"]+)"/i.exec(link)?.[1]
+  if (!href) return null
+  return join(base, href.replace(/^\/gym-tracker\//, ''))
+}
+
 check('Apple touch icon is 180x180', (() => {
-  const size = pngSize(join(root, 'public/icons/apple-touch-icon.png'))
+  const file = appleTouchPath(readFileSync(join(root, 'index.html'), 'utf8'), join(root, 'public'))
+  if (!file) return false
+  const size = pngSize(file)
   return Boolean(size) && size.width === 180 && size.height === 180
 })())
 
@@ -160,7 +173,9 @@ if (existsSync(dist)) {
       check(
         'built Apple touch icon is 180x180',
         (() => {
-          const size = pngSize(join(dist, 'icons/apple-touch-icon.png'))
+          const file = appleTouchPath(readFileSync(join(dist, 'index.html'), 'utf8'), dist)
+          if (!file) return false
+          const size = pngSize(file)
           return Boolean(size) && size.width === 180 && size.height === 180
         })(),
       )
