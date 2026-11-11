@@ -27,6 +27,7 @@ jobs:
       - run: npm run verify:dates
       - run: npm run verify:storage
       - run: npm run verify:duration
+      - run: npm run verify:routines
       - run: npm run verify:stopwatch-unit
       - run: npm run verify:cache
       - run: npm run verify:render

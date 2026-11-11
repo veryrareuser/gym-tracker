@@ -3,6 +3,7 @@
 import { supabase } from './supabaseClient'
 import { imageUrl, DEFAULT_EXERCISE_IMAGE_MAP } from './exerciseDb'
 import { currentUserId } from './auth'
+import { generateId } from './utils'
 
 /*
  * Local cache keys are namespaced per user id. Without this, two people sharing a
@@ -23,7 +24,7 @@ const LEGACY_KEYS = ['gym_exercises', 'gym_sessions', 'gym_draft']
  * storage as `${base}:${userId}`. Distinct from LEGACY_KEYS, which are the old
  * unprefixed names read once during migration and then deleted.
  */
-const CACHE_BASES = ['exercises', 'sessions', 'summaries', 'gym_draft']
+const CACHE_BASES = ['exercises', 'sessions', 'summaries', 'routines', 'gym_draft']
 
 /**
  * Drop a user's cached rows. Called on sign-out: namespacing already stops the next
@@ -40,7 +41,7 @@ export function clearLocalCache(userId) {
   }
   // The memoised reads below are keyed by account too, so they have to go with them.
   // Leaving them would let the next sign-in read the previous account's rows.
-  invalidate(memo.sessions, memo.summaries, memo.exercises)
+  invalidate(memo.sessions, memo.summaries, memo.exercises, memo.routines)
 }
 
 /* ─── Local helpers ─── */
@@ -126,6 +127,7 @@ const memo = {
   sessions: slot(),
   summaries: slot(),
   exercises: slot(),
+  routines: slot(),
 }
 
 /**
@@ -293,6 +295,151 @@ export async function deleteExercise(id) {
   invalidate(memo.exercises)
 }
 
+/* ─── Routines ─── */
+
+/**
+ * The account's routines, each with the exercises in it, in order.
+ *
+ * A routine is a named, ordered list of exercises. It references the shared library
+ * rather than copying it, so one exercise can sit in several routines and renaming
+ * it in the library renames it everywhere.
+ *
+ * The two tables are read separately rather than through a nested select. PostgREST
+ * would do it in one round trip, but the nested form depends on it detecting the
+ * composite foreign key, and the two queries are cheap next to the exercise library
+ * that has to be read anyway to show the names.
+ *
+ * @returns [{ id, name, order, exercise_ids: [...] }]
+ */
+export async function getRoutines() {
+  const key = cacheKey('routines', currentUserId())
+  return memoized(memo.routines, key, async () => {
+    if (supabase) {
+      const { data, error } = await supabase
+        .from('routines')
+        .select('id,name,order')
+        .order('order', { ascending: true })
+      if (!error && data) {
+        const { data: links, error: linkError } = await supabase
+          .from('routine_exercises')
+          .select('routine_id,exercise_id,order')
+          .order('order', { ascending: true })
+        if (!linkError) {
+          const byRoutine = new Map()
+          for (const link of links || []) {
+            if (!byRoutine.has(link.routine_id)) byRoutine.set(link.routine_id, [])
+            byRoutine.get(link.routine_id).push(link.exercise_id)
+          }
+          const routines = data.map(r => ({
+            id: r.id,
+            name: r.name,
+            order: r.order,
+            exercise_ids: byRoutine.get(r.id) || [],
+          }))
+          localSet('routines', routines)
+          return routines
+        }
+      }
+    }
+    return localGet('routines')
+  })
+}
+
+/**
+ * Create a routine, or rename one.
+ *
+ * The order is set once, when the routine is created, and never touched again: it is
+ * what keeps the list stable when a routine is renamed, and there is no reordering of
+ * routines themselves.
+ */
+export async function saveRoutine({ id, name, order }) {
+  const userId = requireUserId('save a routine')
+  const clean = String(name || '').trim()
+  if (!clean) throw new Error('A routine needs a name.')
+
+  const previous = localGet('routines').find(r => r.id === id)
+  const row = {
+    id,
+    name: clean,
+    order: order ?? previous?.order ?? Date.now(),
+    user_id: userId,
+  }
+  if (supabase) {
+    unwrap(await supabase.from('routines').upsert(row), `save routine ${id}`)
+  }
+
+  // A rename must not empty the routine, so the existing exercise list is carried
+  // over rather than rebuilt.
+  const routines = localGet('routines').filter(r => r.id !== id)
+  routines.push({ id, name: clean, order: row.order, exercise_ids: previous?.exercise_ids || [] })
+  localSet('routines', routines)
+  invalidate(memo.routines)
+  return { id, name: clean, order: row.order }
+}
+
+/**
+ * Replace the contents of a routine with an ordered list of exercises.
+ *
+ * The whole list is written rather than patched, because a drag can move anything
+ * anywhere and the order is the thing being stored. Rows that are still there are
+ * updated in place; rows that are gone are deleted.
+ */
+export async function setRoutineExercises(routineId, exerciseIds) {
+  const userId = requireUserId('change a routine')
+  const ids = exerciseIds || []
+
+  if (supabase) {
+    const { data: existing, error: readError } = await supabase
+      .from('routine_exercises')
+      .select('id,exercise_id')
+      .eq('routine_id', routineId)
+    if (readError) throw new Error(readError.message)
+
+    const keep = new Set(ids)
+    const gone = (existing || []).filter(row => !keep.has(row.exercise_id))
+    if (gone.length > 0) {
+      unwrap(
+        await supabase.from('routine_exercises').delete().in('id', gone.map(r => r.id)),
+        `remove exercises from routine ${routineId}`,
+      )
+    }
+
+    const have = new Map((existing || []).map(row => [row.exercise_id, row.id]))
+    const rows = ids.map((exerciseId, index) => ({
+      id: have.get(exerciseId) || generateId(),
+      routine_id: routineId,
+      exercise_id: exerciseId,
+      order: index,
+      user_id: userId,
+    }))
+    if (rows.length > 0) {
+      unwrap(
+        await supabase.from('routine_exercises').upsert(rows, { onConflict: 'user_id,routine_id,exercise_id' }),
+        `save the exercises of routine ${routineId}`,
+      )
+    }
+  }
+
+  const routines = localGet('routines').map(r => (r.id === routineId ? { ...r, exercise_ids: ids } : r))
+  localSet('routines', routines)
+  invalidate(memo.routines)
+}
+
+/**
+ * Delete a routine.
+ *
+ * Its rows go with it. Sessions that were logged from it keep their exercises and
+ * simply lose the link — a workout you did is a fact, and it does not stop being a
+ * fact because you tidied up a routine.
+ */
+export async function deleteRoutine(id) {
+  if (supabase) {
+    unwrap(await supabase.from('routines').delete().eq('id', id), `delete routine ${id}`)
+  }
+  localSet('routines', localGet('routines').filter(r => r.id !== id))
+  invalidate(memo.routines)
+}
+
 /* ─── Public profile (leaderboard visibility) ─── */
 
 /**
@@ -331,7 +478,7 @@ export async function setProfileVisible(visible) {
  * the bytes: 176 KB became 119 KB for a realistic account.
  */
 const SESSION_FIELDS =
-  'id,date,notes,duration_seconds,is_draft,exercise_logs(id,session_id,exercise_id,order,set_entries(id,exercise_log_id,set_number,weight,reps,note))'
+  'id,date,notes,duration_seconds,is_draft,routine_id,exercise_logs(id,session_id,exercise_id,order,set_entries(id,exercise_log_id,set_number,weight,reps,note))'
 
 /**
  * Real, saved workouts. Drafts are excluded here and nowhere else in the client: every
@@ -434,7 +581,7 @@ export async function getDraft() {
     .from('workout_sessions')
     // started_at is the instant the workout began, which is what lets the timer resume
     // where it was rather than starting over.
-    .select('id,date,notes,started_at,duration_seconds,exercise_logs(id,session_id,exercise_id,order,set_entries(id,exercise_log_id,set_number,weight,reps,note))')
+    .select('id,date,notes,started_at,duration_seconds,routine_id,exercise_logs(id,session_id,exercise_id,order,set_entries(id,exercise_log_id,set_number,weight,reps,note))')
     .eq('is_draft', true)
     .order('created_at', { ascending: false })
     .limit(1)
@@ -530,6 +677,9 @@ export async function saveSession(session, { draft = false } = {}) {
   }
   if (session.duration_seconds !== undefined) header.duration_seconds = session.duration_seconds
   if (session.started_at !== undefined) header.started_at = session.started_at
+  // Which routine the session was logged from. Left alone when it is not in the
+  // payload, so editing a session that was never routine-based does not invent one.
+  if (session.routine_id !== undefined) header.routine_id = session.routine_id
   unwrap(
     await supabase.from('workout_sessions').upsert(header),
     `save session ${session.id}`,

@@ -81,6 +81,11 @@ src = src
   .replace(/import \\{ supabase \\} from '\\.\\/supabaseClient'/, 'const supabase = globalThis.__client')
   .replace(/import \\{ currentUserId \\} from '\\.\\/auth'/, "const currentUserId = () => 'u1'")
   .replace(/import \\{ imageUrl, DEFAULT_EXERCISE_IMAGE_MAP \\} from '\\.\\/exerciseDb'/, 'const imageUrl = p => p; const DEFAULT_EXERCISE_IMAGE_MAP = {}')
+  // The stub for ./utils matters more than it looks: the module is loaded from a
+  // data: URL, and a data: URL has no base to resolve a relative import against, so
+  // an unstubbed import fails with "Invalid relative URL or base scheme is not
+  // hierarchical" before a single assertion runs.
+  .replace(/import \{ generateId \} from '\\.\\/utils'/, 'const generateId = () => "gen-" + Math.random()')
 
 const mod = await import('data:text/javascript;base64,' + Buffer.from(src).toString('base64'))
 
