@@ -226,6 +226,14 @@ try {
     method: 'DELETE',
     headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}`, 'X-Session-Token': token },
   })
+  // The draft too. A draft left behind by an earlier run — or by a run of
+  // verify-routine-return, whose app writes one back as it closes — is not a harmless
+  // leftover: the Log tab restores a draft instead of opening on the routine list, and
+  // the first check below would fail for a reason that has nothing to do with routines.
+  await fetch(`${SB_URL}/rest/v1/workout_sessions?is_draft=eq.true`, {
+    method: 'DELETE',
+    headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}`, 'X-Session-Token': token },
+  })
 
   console.log('\n2. the Log tab opens on the routine list, not the exercise library')
   await evaluate(`location.hash = '#/log'`)
