@@ -422,7 +422,12 @@ export default function LogWorkout() {
   // Autosave runs for new sessions only. Editing a saved workout is a deliberate, brief
   // change to something that already exists in the cloud, and a draft row for it would
   // mean two copies of one session.
-  const { state: autosaveState } = useAutosave(autosaveSession, { enabled: !isEditMode })
+  //
+  // It is also off while a save is in progress: the draft write and the save write the
+  // same row, and the one that lands last wins. See pauseAutosave below.
+  const { state: autosaveState, pause: pauseAutosave, resume: resumeAutosave } = useAutosave(autosaveSession, {
+    enabled: !isEditMode && !saving,
+  })
 
   function updateSet(logId, setId, field, value) {
     setLogs(prev =>
@@ -721,6 +726,14 @@ export default function LogWorkout() {
             .map(s => ({ ...s, exercise_log_id: log.id })),
         })),
     }
+    // The autosave and the save write the same row: the save flips is_draft to false,
+    // and a draft write sets it back to true. Whichever lands last wins, so if the
+    // autosave's write landed second the workout went back to being a draft and
+    // History did not show it — which is why saving took two taps.
+    //
+    // So the autosave stops first, and the write it already had in flight is waited
+    // out. The save is then the last word on the row.
+    await pauseAutosave()
     try {
       // draft: false promotes whatever autosave wrote: same row, same id, flag flipped.
       // There is no copy step, so a draft cannot survive a successful save.
@@ -735,6 +748,9 @@ export default function LogWorkout() {
       navigate('/history')
     } catch (err) {
       setSaveError(`Could not save this session: ${err.message}`)
+      // The save did not land, so the draft is still the thing that holds the workout.
+      // Let the autosave carry it again.
+      resumeAutosave()
     } finally {
       setSaving(false)
     }
@@ -876,8 +892,31 @@ export default function LogWorkout() {
 
           The clock is started by hand. Opening the Log page used to start it by
           itself, which meant that merely looking at the app recorded time nobody
-          spent training. */}
-      <div style={{ marginBottom: 16 }}>
+          spent training.
+
+          It sticks to the top of the screen. A routine of six exercises is a long
+          page on a phone, and the set you are typing is at the bottom of it, so a
+          clock at the top meant scrolling up to read the time and back down to type
+          the next set. The clock follows you instead.
+
+          The negative margins are the page gutter: the bar has to cover the full
+          width of the screen when it sticks, or the exercise cards slide past in the
+          gaps at the sides. */}
+      <div
+        style={{
+          marginBottom: 16,
+          position: 'sticky',
+          top: 0,
+          zIndex: 5,
+          background: 'var(--canvas)',
+          marginLeft: 'calc(var(--gutter) * -1)',
+          marginRight: 'calc(var(--gutter) * -1)',
+          paddingLeft: 'var(--gutter)',
+          paddingRight: 'var(--gutter)',
+          paddingTop: 8,
+          paddingBottom: 8,
+        }}
+      >
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: isEditMode ? 0 : 10, flexWrap: 'wrap' }}>
           <Clock size={15} color="var(--ink-muted)" />
           <span style={{ fontSize: 'var(--type-subhead)', color: 'var(--ink-muted)' }}>Session time</span>

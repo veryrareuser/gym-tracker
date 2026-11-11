@@ -97,25 +97,33 @@ export function getTopSet(sets) {
 }
 
 /**
- * A duration in seconds, as "1h 05m" / "45m" / "30s".
+ * A duration in seconds, as "1h 05m" / "45m" / "<1m".
  *
- * The "h with m" shape, not a decimal, because a session length is a span of time and
- * "1h 05m" is how it is said out loud. Zero components are dropped: an hour and a
- * half reads "1h 30m", not "1h 30m 0s".
+ * Whole minutes, and no seconds. A workout's length is a span of time, not a
+ * stopwatch reading: "1h 45m" is how a session is talked about, and "1h 45m 30s" is
+ * a number nobody needs. The live clock keeps its seconds — that is
+ * formatStopwatch, and it is a different thing on purpose.
+ *
+ * The "h with m" shape, not a decimal, because "1h 05m" is how it is said out loud.
+ * Zero components are dropped: an hour and a half reads "1h 30m", not "1h 30m 0m".
+ *
+ * Under a minute reads "<1m" rather than "0m", so a short workout does not look like
+ * no workout at all.
  */
 export function formatDuration(seconds) {
   if (seconds === null || seconds === undefined) return ''
   const total = Math.max(0, Math.round(Number(seconds) || 0))
-  if (total === 0) return '0s'
+  if (total === 0) return '0m'
+  // Under a minute, before any rounding: "0m" would read as no workout at all.
+  if (total < 60) return '<1m'
 
-  const h = Math.floor(total / 3600)
-  const m = Math.floor((total % 3600) / 60)
-  const s = total % 60
+  const minutes = Math.round(total / 60)
+  const h = Math.floor(minutes / 60)
+  const m = minutes % 60
 
   const parts = []
   if (h > 0) parts.push(`${h}h`)
   if (m > 0) parts.push(`${m}m`)
-  if (s > 0) parts.push(`${s}s`)
   return parts.join(' ')
 }
 

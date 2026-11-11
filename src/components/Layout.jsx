@@ -23,7 +23,12 @@ export default function Layout({ onSignOut, username }) {
       style={{
         maxWidth: 520,
         margin: '0 auto',
-        minHeight: '100dvh',
+        // A height, not a minimum. With a minimum the shell grew with its content and
+        // the document scrolled instead of <main> — so <main> was not the scroll
+        // container it was written to be, the scroll position carried over from one tab
+        // to the next, and a sticky element inside it never moved: the clock at the
+        // top of the Log page scrolled away with the exercise cards it belonged to.
+        height: '100dvh',
         display: 'flex',
         flexDirection: 'column',
         background: 'var(--canvas)',
@@ -60,8 +65,18 @@ export default function Layout({ onSignOut, username }) {
       {securityOpen && <AccountSecurity onClose={() => setSecurityOpen(false)} />}
 
       {/* Page content. This is the scroll container, so the body never scrolls and
-          the tab bar can stay fixed without a scroll listener. */}
-      <main style={{ flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
+          the tab bar can stay fixed without a scroll listener.
+          overscroll-behavior is the body's own rule applied here: this is the element
+          that scrolls now, so it is the one that must not pull the page to refresh
+          when it reaches the top. */}
+      <main
+        style={{
+          flex: 1,
+          overflowY: 'auto',
+          WebkitOverflowScrolling: 'touch',
+          overscrollBehavior: 'none',
+        }}
+      >
         <Outlet />
       </main>
 

@@ -120,7 +120,7 @@ const MEMO_TTL_MS = 30_000
 
 /** One cache slot: the last result, when it was fetched, and the request in flight. */
 function slot() {
-  return { key: null, data: null, at: 0, pending: null }
+  return { key: null, data: null, at: 0, pending: null, generation: 0 }
 }
 
 const memo = {
@@ -148,17 +148,27 @@ function memoized(store, key, produce) {
   if (store.key === key && store.pending) return store.pending
 
   store.key = key
+  // Which generation of the data this request is asking about. A write bumps the
+  // generation, and a request that was already on its way is then answering a
+  // question from before that write.
+  const generation = store.generation
   const pending = produce().then(
     data => {
-      store.data = data
-      store.at = Date.now()
-      store.pending = null
+      // Only remember it if nothing was written while it was in flight. Caching a
+      // pre-write answer would serve rows from before the write to whoever reads
+      // next, and no request would be made to correct it — which is how a workout
+      // you had just saved could be missing from History for thirty seconds.
+      if (store.generation === generation) {
+        store.data = data
+        store.at = Date.now()
+      }
+      if (store.pending === pending) store.pending = null
       return data
     },
     error => {
       // A failed read must not be cached, or the app would show the error for the whole
       // window instead of trying again.
-      store.pending = null
+      if (store.pending === pending) store.pending = null
       throw error
     }
   )
@@ -168,7 +178,13 @@ function memoized(store, key, produce) {
 
 /** Forget a cached read, because the rows behind it just changed. */
 function invalidate(...stores) {
-  for (const store of stores) store.data = null
+  for (const store of stores) {
+    store.data = null
+    // A request already in flight is answering from before the write, so the next
+    // reader does not join it: that reader wants the rows as they are now.
+    store.pending = null
+    store.generation++
+  }
 }
 
 /* ─── Default exercises ─── */

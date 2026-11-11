@@ -358,6 +358,27 @@ try {
   await evaluate(`location.hash = '#/log'`)
   await sleep(3500)
 
+  // The Log tab opens on the routine list, not on the workout. That is the design:
+  // the library is long and a routine is the short list you meant. So the workout
+  // editor — and with it the clock — is one tap away, and this suite has to open it
+  // before it can look for the clock.
+  //
+  // It used to find the clock straight away, and stopped finding it the day routines
+  // landed. Nothing caught that: this suite needs a live database and a browser, so
+  // it is not in the CI gate, and it was left to rot.
+  const onRoutineList = await evaluate(`(() => /Pick a routine to log/.test(document.body.innerText || ''))()`)
+  check('the Log tab opens on the routine list', onRoutineList === true, String(onRoutineList))
+  check(
+    '"Log without a routine" was clicked',
+    (await evaluate(`(() => {
+      const btn = Array.from(document.querySelectorAll('button')).find(b => /Log without a routine/.test(b.innerText || ''))
+      if (!btn) return 'no button'
+      btn.click()
+      return 'clicked'
+    })()`)) === 'clicked',
+  )
+  await sleep(2500)
+
   const clock1 = JSON.parse(await evaluate(readClock))
   check('the page shows a "Session time" label', clock1.hasLabel, JSON.stringify(clock1))
   check('the clock reads zero', clock1.clock === '00:00', String(clock1.clock))
