@@ -47,6 +47,10 @@ globalThis.window = {
 
 globalThis.queries = 0
 globalThis.offline = false
+// Which table is slow, and by how long. Only the table named here waits, so a test
+// can have a read still in flight while a write lands.
+globalThis.slowTable = null
+globalThis.delay = 0
 
 const rows = [{
   id: 's1', date: '2026-10-14', notes: null, is_draft: false,
@@ -57,19 +61,21 @@ globalThis.rows = rows
 
 // A stand-in for the Supabase client that counts the queries and answers with rows.
 globalThis.__client = {
-  from: () => {
+  from: (table) => {
     globalThis.queries++
     if (globalThis.offline) throw new Error('network down')
     const builder = {
       select: () => builder,
       eq: () => builder,
+      in: () => builder,
       order: () => builder,
       limit: () => builder,
       maybeSingle: async () => ({ data: rows[0], error: null }),
       upsert: async () => ({ data: null, error: null }),
       delete: () => builder,
-      then: (res, rej) => Promise.resolve({ data: rows, error: null }).then(res, rej),
-    }
+      then: (res, rej) => new Promise(resolve =>
+        setTimeout(() => resolve({ data: rows, error: null }), table === globalThis.slowTable ? globalThis.delay : 0),
+      ).then(res, rej),    }
     return builder
   },
   rpc: async () => ({ data: null, error: null }),
@@ -137,6 +143,29 @@ let threwAgain = false
 try { await mod.getSessions() } catch { threwAgain = true }
 chk('and it is tried again rather than remembered', threwAgain)
 globalThis.offline = false
+
+console.log('')
+console.log('--- a read in flight when a write lands is not cached ---')
+// The read went out before the write, so it answers with the rows as they were then.
+// Caching that answer would serve it to the next reader, and no request would be
+// made to correct it: a workout you had just saved would be missing from the list
+// for the whole thirty seconds.
+//
+// It reads the session tree, because the failed read above left that store empty —
+// a store with something in it would answer from the cache instead of going to the
+// network, and the race would not happen at all.
+globalThis.slowTable = 'workout_sessions'
+globalThis.delay = 300
+globalThis.queries = 0
+const inFlight = mod.getSessions()
+// A saved workout: the write that invalidates the list.
+await mod.saveSession({ id: 's2', date: '2026-11-11', notes: null, exercise_logs: [] }, { draft: false })
+await inFlight
+globalThis.slowTable = null
+globalThis.delay = 0
+globalThis.queries = 0
+await mod.getSessions()
+chk('the next reader asks again rather than trusting the old answer', globalThis.queries === 1, 'queries=' + globalThis.queries)
 
 console.log('FAILURES=' + bad)
 `

@@ -29,7 +29,7 @@ const DEBOUNCE_MS = 3000
 /**
  * @param session  the workout to persist, or null when there is nothing worth saving
  * @param options.enabled  false disables autosave entirely
- * @returns {{ saving: boolean, lastSavedAt: number|null, failed: boolean }}
+ * @returns {{ state, saving, saved, failed, lastSavedAt, error, pause, resume }}
  */
 export default function useAutosave(session, { enabled = true } = {}) {
   // 'saving' | 'saved' | 'failed' | null. Distinct from `saving: boolean` because the UI
@@ -39,7 +39,12 @@ export default function useAutosave(session, { enabled = true } = {}) {
   const [error, setError] = useState(null)
 
   const timerRef = useRef(null)
-  const inFlightRef = useRef(false)
+  // The running flush's promise, not a boolean: the save has to be able to wait for
+  // it. See pause() below.
+  const inFlightRef = useRef(null)
+  // Set while a save is in progress. A draft write and a save write the same row,
+  // and the one that lands last wins — so nothing may start in between.
+  const pausedRef = useRef(false)
   // Read inside the handlers below, which are installed once. Holding the session in a ref
   // keeps the debounce from being torn down and rebuilt on every keystroke, which would
   // otherwise restart the countdown and never fire.
@@ -54,7 +59,7 @@ export default function useAutosave(session, { enabled = true } = {}) {
 
   const flush = useCallback(async () => {
     const current = sessionRef.current
-    if (!enabled || !current || inFlightRef.current) return
+    if (!enabled || pausedRef.current || !current || inFlightRef.current) return
     // A draft with no logged set and no note is not a workout yet. Same rule the local
     // mirror uses, so opening the page alone never creates a cloud draft.
     //
@@ -68,21 +73,26 @@ export default function useAutosave(session, { enabled = true } = {}) {
       Boolean(current.started_at)
     if (!hasContent) return
 
-    inFlightRef.current = true
     setState('saving')
+    const run = (async () => {
+      try {
+        await saveSession(current, { draft: true })
+        setLastSavedAt(Date.now())
+        setError(null)
+        setState('saved')
+      } catch (err) {
+        // The failure is recorded and shown as "Not saved" rather than swallowed. Swallowing
+        // it is how this shipped broken: the chip read "Saved" because it showed during the
+        // attempt, so a write that never landed looked identical to one that did.
+        setError(err)
+        setState('failed')
+      }
+    })()
+    inFlightRef.current = run
     try {
-      await saveSession(current, { draft: true })
-      setLastSavedAt(Date.now())
-      setError(null)
-      setState('saved')
-    } catch (err) {
-      // The failure is recorded and shown as "Not saved" rather than swallowed. Swallowing
-      // it is how this shipped broken: the chip read "Saved" because it showed during the
-      // attempt, so a write that never landed looked identical to one that did.
-      setError(err)
-      setState('failed')
+      await run
     } finally {
-      inFlightRef.current = false
+      inFlightRef.current = null
     }
   }, [enabled])
 
@@ -119,5 +129,44 @@ export default function useAutosave(session, { enabled = true } = {}) {
     }
   }, [enabled, flush])
 
-  return { state, saving: state === 'saving', saved: state === 'saved', failed: state === 'failed', lastSavedAt, error }
+  /**
+   * Stop autosaving, and wait for whatever it is doing right now.
+   *
+   * This is what a save has to do first.
+   *
+   * A draft and a saved workout are the same row: the save flips is_draft from true
+   * to false, and a draft write sets it back to true. Both write the same row, so
+   * whichever lands last wins — and if the draft write lands last, the workout is a
+   * draft again, which means History does not show it. That is the "I have to press
+   * Save twice" bug: the first save worked, and then the autosave's write, which was
+   * already on its way, undid it.
+   *
+   * So the save waits here first: the pending debounce is dropped, the write already
+   * in flight is finished, and nothing new starts until the save says so.
+   */
+  const pause = useCallback(async () => {
+    pausedRef.current = true
+    if (timerRef.current) {
+      clearTimeout(timerRef.current)
+      timerRef.current = null
+    }
+    const running = inFlightRef.current
+    if (running) await running
+  }, [])
+
+  /** Let the autosave start again, for a save that failed. */
+  const resume = useCallback(() => {
+    pausedRef.current = false
+  }, [])
+
+  return {
+    state,
+    saving: state === 'saving',
+    saved: state === 'saved',
+    failed: state === 'failed',
+    lastSavedAt,
+    error,
+    pause,
+    resume,
+  }
 }

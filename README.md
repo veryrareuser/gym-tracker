@@ -41,7 +41,7 @@ alternative lost data or lied to the user at some point.
 | Tab | What it is for |
 | --- | --- |
 | **Home** | Streak, sessions this month, last session's volume, time trained, and a big button that starts a workout. |
-| **Log** | The routine list, then the workout: sets, weight, reps, notes and the clock. |
+| **Log** | The routine list, then the workout: sets, weight, reps, notes, and a clock that follows you down the page. |
 | **History** | A month calendar with the days you trained, and every workout listed underneath. |
 | **Progress** | Weight progression, volume by week, month or session, personal records, a six-month activity heatmap, a muscle-balance body map, and the leaderboard. |
 | **Exercises** | Your own exercise library: rename an exercise, delete one, or add from the 1,324-exercise catalogue. |
@@ -89,6 +89,10 @@ columns, so a workout can be timed on one device and finished on another.
 The duration is stored as `duration_seconds` (the time already counted) plus
 `started_at` (the start of the current segment). `NULL` means "never measured", which
 is different from a zero-length workout.
+
+It stays in view. The clock is pinned under the header while you scroll the exercise
+cards, because the set you are typing is at the bottom of a long page and a clock at
+the top means scrolling up to read the time and back down to type the next set.
 
 ### Drafts
 
@@ -140,8 +144,9 @@ offset shadows with no blur, flat fills, and one accent colour. Space Grotesk,
 self-hosted, weights 400 and 700 only. Black text on every fill; white only on black.
 
 The layout is a phone layout that does not reflow — the content is capped at 520px and
-centred, and `<main>` is the scroll container so the tab bar stays put without a scroll
-listener. Appearance follows the system setting; there is no in-app theme toggle.
+centred, and `<main>` is the scroll container so the body never scrolls, the tab bar
+stays put without a scroll listener, and a sticky element inside it stays put.
+Appearance follows the system setting; there is no in-app theme toggle.
 
 ---
 
@@ -356,6 +361,7 @@ These need credentials and a real browser, and are run by hand:
 | `verify:auth`, `verify:expiry` | a served build, `SB_USER`, `SB_PASSWORD` | Signing in and out; a session that dies mid-tab. |
 | `verify:date-default` | a served build | The Log page opens on today, and opening it alone leaves no draft. |
 | `verify:stopwatch` | the four variables | The whole clock lifecycle, against the live database. |
+| `verify:save-once` | the four variables | That one tap on Save leaves the workout in History. |
 | `verify:routines-browser` | the four variables | Creating a routine, adding exercises, and a **real mouse drag** on the grip handle. |
 | `verify:routine-return` | the four variables | That the Log tab comes back to the screen you left it on, and that picking a routine never loses a set. |
 

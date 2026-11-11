@@ -27,14 +27,19 @@ function check(label, ok, detail = '') {
 
 console.log('Duration formatting\n')
 
-// The "h with m" shape, with zero components dropped.
+// The "h with m" shape, with zero components dropped, and no seconds: a workout's
+// length is a span of time, not a stopwatch reading. The live clock keeps its
+// seconds — that is formatStopwatch, and it is a different thing on purpose.
 check('an hour and a half', formatDuration(5400) === '1h 30m', formatDuration(5400))
 check('under an hour', formatDuration(2700) === '45m', formatDuration(2700))
 check('an exact hour', formatDuration(3600) === '1h', formatDuration(3600))
-check('seconds only', formatDuration(45) === '45s', formatDuration(45))
-check('nothing is zero', formatDuration(0) === '0s', formatDuration(0))
+check('the seconds are rounded away', formatDuration(5430) === '1h 31m', formatDuration(5430))
+check('under a minute', formatDuration(45) === '<1m', formatDuration(45))
+check('just under a minute', formatDuration(59) === '<1m', formatDuration(59))
+check('exactly a minute', formatDuration(60) === '1m', formatDuration(60))
+check('nothing is zero', formatDuration(0) === '0m', formatDuration(0))
 check('a missing duration is blank', formatDuration(null) === '', JSON.stringify(formatDuration(null)))
-check('a negative duration is zero', formatDuration(-10) === '0s', formatDuration(-10))
+check('a negative duration is zero', formatDuration(-10) === '0m', formatDuration(-10))
 
 // The cumulative figure is in decimal hours, because that is the number that answers
 // "how much have I put in".
