@@ -28,6 +28,7 @@
     "verify:sw": "node scripts/verify-sw.mjs",
     "verify:stopwatch": "node scripts/verify-stopwatch.mjs",
     "verify:routines-browser": "node scripts/verify-routines.mjs",
+    "verify:routine-return": "node scripts/verify-routine-return.mjs",
     "verify:render": "node scripts/lib/render-components.test.mjs",
     "verify:geometry": "node scripts/lib/body-geometry.test.mjs",
     "verify:bodymap": "node scripts/lib/body-map-interaction.test.mjs",
