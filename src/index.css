@@ -1,6 +1,19 @@
 @import "tailwindcss";
 
 /*
+ * Tailwind scans the whole project for class names. That includes the Markdown:
+ * a README full of prose turns stray words into utility classes, and they ship in
+ * the production CSS. Two problems with that. The bundle changes when a document
+ * changes, and a word in a document can silently become a class name the app also
+ * uses — a README that says "flex" would generate `.flex`, and the day somebody
+ * writes className="flex" the layout changes under them.
+ *
+ * The app uses no Tailwind utilities. The import above is for the reset, and the
+ * reset does not need to be scanned for classes.
+ */
+@source not "../**/*.md";
+
+/*
  * Design tokens — source of truth: ../DESIGN.md
  *
  * ── The style ─────────────────────────────────────────────────────────────────
