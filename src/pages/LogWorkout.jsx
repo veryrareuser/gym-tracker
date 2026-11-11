@@ -1,15 +1,18 @@
 // src/pages/LogWorkout.jsx
-import { useEffect, useMemo, useState, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useState, useRef } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { Plus, Trash2, ChevronDown, ChevronUp, Check, ArrowLeft, RotateCcw, Clock, CircleAlert, Dumbbell } from 'lucide-react'
-import { getExercises, getSession, getDraft, discardDraft, saveExercise, saveSession } from '../lib/db'
+import { getExercises, getSession, getDraft, discardDraft, saveExercise, saveSession, getRoutines, saveRoutine, setRoutineExercises } from '../lib/db'
 import { generateId, todayISO, formatDate, formatDuration, formatStopwatch } from '../lib/utils'
 import { imageUrl } from '../lib/exerciseDb'
 import { startStopwatch, pauseStopwatch, stopStopwatch, clearStopwatch, restoreStopwatch, readStopwatch, elapsedSeconds, elapsedMs, isRunning } from '../lib/stopwatch'
 import useAutosave from '../lib/useAutosave'
 import { mergeWithLibrary } from '../lib/draft'
+import { mergeOrder } from '../lib/routines'
 import { currentUserId } from '../lib/auth'
 import ExercisePicker from '../components/ExercisePicker'
+import RoutinePicker from '../components/RoutinePicker'
+import RoutineEditor from '../components/RoutineEditor'
 
 // The draft is namespaced per user for the same reason the session cache is: an
 // in-progress workout belongs to whoever is typing it, and on a shared device an
@@ -70,7 +73,9 @@ export default function LogWorkout() {
   const [saveError, setSaveError] = useState(null)
   const [sessionNotes, setSessionNotes] = useState('')
   const [hasDraft, setHasDraft] = useState(false)
-  const [showPicker, setShowPicker] = useState(false)
+  // Which picker is open, if any: 'session' to add an exercise to the workout being
+  // logged, 'routine' to add one to the routine being edited.
+  const [pickerMode, setPickerMode] = useState(null)
   const isEditMode = Boolean(sessionId)
   // Prevents the draft effect from writing an empty draft during the async load.
   const loadedRef = useRef(false)
@@ -95,6 +100,19 @@ export default function LogWorkout() {
   // it be corrected by hand, which is the only way to time a workout that was not
   // measured — a session logged from memory, or one whose draft was lost.
   const [durationSeconds, setDurationSeconds] = useState(null)
+  // The routines, and which one is being logged.
+  //
+  // `routines` is the account's list. `routineId` is the routine the current session
+  // was started from, or null when the session is not tied to one — the "log without
+  // a routine" escape hatch, and every session logged before routines existed.
+  const [routines, setRoutines] = useState([])
+  const [routineId, setRoutineId] = useState(null)
+  // Whether the routine list is showing. The Log tab opens on the list, because the
+  // whole point of routines is not having to scroll a long exercise list to find the
+  // six things you are actually doing.
+  const [picking, setPicking] = useState(true)
+  // The reorder editor for the current routine.
+  const [editingRoutine, setEditingRoutine] = useState(false)
   // A duration typed in by hand: the hours and the minutes, as separate fields.
   //
   // Two fields rather than one number, because that is what a person is entering —
@@ -120,9 +138,21 @@ export default function LogWorkout() {
   useEffect(() => {
     let cancelled = false
     async function load() {
-      const exs = await getExercises()
+      const [exs, routineList] = await Promise.all([getExercises(), getRoutines()])
       if (cancelled) return
       setExercises(exs)
+      setRoutines(routineList)
+
+      // The exercises a routine holds, in the routine's order, as library entries.
+      // An exercise that has since been deleted from the library is left out rather
+      // than shown as a blank card.
+      const routineExercises = id => {
+        const routine = routineList.find(r => r.id === id)
+        if (!routine) return []
+        return routine.exercise_ids
+          .map(eid => exs.find(e => e.id === eid))
+          .filter(Boolean)
+      }
 
       if (isEditMode) {
         // Only the one session being edited. This used to load every session in the
@@ -182,11 +212,17 @@ export default function LogWorkout() {
         setCurrentSessionId(cloud.id)
         setDate(cloud.date || todayISO())
         setSessionNotes(cloud.notes || '')
-        // Merged back into the library, not used as the whole editor. The draft only holds
+        // The draft remembers which routine it belongs to, so reopening the Log tab
+        // lands back in the routine you were working in rather than in the list.
+        const draftRoutineId = cloud.routine_id || null
+        setRoutineId(draftRoutineId)
+        setPicking(false)
+        // Merged back into the routine, not used as the whole editor. The draft only holds
         // exercises with a logged set, so restoring it verbatim would reopen the page with
         // one card — the one you happened to fill last. Re-seeding puts every exercise
         // back, empty ones included, which is what you were looking at when you left.
-        setLogs(mergeWithLibrary(exs, cloud.exercise_logs, generateId))
+        const source = draftRoutineId ? routineExercises(draftRoutineId) : exs
+        setLogs(mergeWithLibrary(source, cloud.exercise_logs, generateId))
         setHasDraft(true)
         if (local) {
           setTimer({ ...local, sessionId: cloud.id })
@@ -225,7 +261,13 @@ export default function LogWorkout() {
         }
       }
 
-      setLogs(exs.map((ex, i) => emptyLog(ex, i)))
+      // Nothing in progress: the Log tab opens on the routine list.
+      //
+      // It used to open on the whole exercise library, which is the thing this
+      // feature exists to fix — a list of dozens of rows, of which you do six.
+      // The editor stays empty until a routine is picked.
+      setLogs([])
+      setPicking(true)
       // No clock is started here. Opening the Log page used to start one by itself,
       // which meant that simply looking at the app recorded time nobody spent
       // training. The measurement waits for a deliberate Start.
@@ -261,8 +303,8 @@ export default function LogWorkout() {
       timer !== null
     if (hasContent) {
       // The measurement rides along so a restored draft picks the clock up where it
-      // was — running, paused or stopped.
-      const payload = JSON.stringify({ logs, date, sessionNotes, timer })
+      // was — running, paused or stopped — and so does the routine it belongs to.
+      const payload = JSON.stringify({ logs, date, sessionNotes, timer, routineId })
       sessionStorage.setItem(draftKey(), payload)
       mirrorDraft('set', payload)
     } else {
@@ -270,7 +312,7 @@ export default function LogWorkout() {
       mirrorDraft('clear')
     }
     setHasDraft(hasContent)
-  }, [logs, date, sessionNotes, timer, isEditMode])
+  }, [logs, date, sessionNotes, timer, routineId, isEditMode])
 
   // Warn before the window closes or reloads with an unsaved workout.
   //
@@ -328,6 +370,9 @@ export default function LogWorkout() {
       notes: sessionNotes,
       duration_seconds: timer ? Math.round(timer.accumulatedMs / 1000) : undefined,
       started_at: timer?.runningSince ? new Date(timer.runningSince).toISOString() : null,
+      // Which routine this session belongs to. It is what lets the Log tab reopen the
+      // same routine after a reload, instead of dropping you back on the list.
+      routine_id: routineId,
       exercise_logs: logs
         .filter(log => log.set_entries.some(s => s.weight || s.reps))
         .map((log, i) => ({
@@ -339,7 +384,7 @@ export default function LogWorkout() {
             .map(s => ({ ...s, exercise_log_id: log.id })),
         })),
     }),
-    [currentSessionId, date, sessionNotes, timer, logs],
+    [currentSessionId, date, sessionNotes, timer, routineId, logs],
   )
 
   // Autosave runs for new sessions only. Editing a saved workout is a deliberate, brief
@@ -377,15 +422,140 @@ export default function LogWorkout() {
     )
   }
 
-  /**
-   * Persist the picked exercise to the library before adding it to the log.
+  /* ── Routines ──
    *
-   * exercise_logs.exercise_id is a foreign key to exercises(id). Previously this
-   * only touched React state, so the log insert failed the FK check, the error was
-   * discarded, and every log in the session — including the pre-loaded ten — was
-   * dropped from the cloud. History then showed the session with no exercises.
+   * A routine is a named, ordered list of exercises drawn from the shared library.
+   * The Log tab opens on the list of routines rather than on the library, because the
+   * library is long and the routine is short and is what you actually meant.
    */
-  async function addExercise(ex) {
+
+  // The routine's exercises, in the routine's order, as library entries.
+  const routineExerciseEntries = useCallback(
+    id => {
+      const routine = routines.find(r => r.id === id)
+      if (!routine) return []
+      return routine.exercise_ids.map(eid => exercises.find(e => e.id === eid)).filter(Boolean)
+    },
+    [routines, exercises],
+  )
+
+  // Put the session's cards into a given order of exercise ids.
+  //
+  // Anything not named in the order keeps its sets and moves to the end, so switching
+  // routines halfway through a workout does not quietly throw away what was logged.
+  const orderLogs = (cards, ids) => {
+    const byExercise = new Map(cards.map(card => [card.exercise_id, card]))
+    const ordered = []
+    for (const id of ids) {
+      const card = byExercise.get(id)
+      if (!card) continue
+      ordered.push(card)
+      byExercise.delete(id)
+    }
+    for (const card of byExercise.values()) ordered.push(card)
+    return ordered.map((card, i) => ({ ...card, order: i }))
+  }
+
+  /**
+   * Start logging a routine.
+   *
+   * The cards become the routine's exercises, in its order. Anything already logged
+   * that the new routine does not contain keeps its sets and stays at the end of the
+   * list, so nothing is lost by changing your mind halfway through.
+   */
+  function pickRoutine(id) {
+    const wanted = id ? routineExerciseEntries(id).map(ex => ex.id) : exercises.map(ex => ex.id)
+    setRoutineId(id)
+    setPicking(false)
+    setEditingRoutine(false)
+    setLogs(prev => {
+      const known = new Set(wanted)
+      // Cards for exercises the new routine does not have are carried over rather than
+      // dropped, so the work is not lost.
+      const kept = prev.filter(card => !known.has(card.exercise_id))
+      const source = id ? routineExerciseEntries(id) : exercises
+      const fresh = source
+        .filter(ex => !prev.some(card => card.exercise_id === ex.id))
+        .map((ex, i) => emptyLog(ex, i))
+      return orderLogs([...kept, ...fresh], mergeOrder(wanted, [...kept, ...fresh].map(c => c.exercise_id)))
+    })
+  }
+
+  /**
+   * Create a routine and open it.
+   *
+   * The new routine goes straight into the reorder editor, because a routine with no
+   * exercises in it is not much of a routine.
+   */
+  async function createRoutine(name) {
+    const id = generateId()
+    await saveRoutine({ id, name })
+    const fresh = await getRoutines()
+    setRoutines(fresh)
+    setRoutineId(id)
+    setPicking(false)
+    setEditingRoutine(true)
+  }
+
+  /**
+   * Write a new order for the routine.
+   *
+   * The session's cards follow, so what you reorder is what you log.
+   */
+  async function reorderRoutine(ids) {
+    if (!routineId) return
+    await setRoutineExercises(routineId, ids)
+    setRoutines(prev => prev.map(r => (r.id === routineId ? { ...r, exercise_ids: ids } : r)))
+    setLogs(prev => orderLogs(prev, mergeOrder(ids, prev.map(c => c.exercise_id))))
+  }
+
+  /**
+   * Take an exercise out of the routine.
+   *
+   * The card stays in the session if it has sets — removing it from the routine is a
+   * statement about the plan, not about the workout you are doing.
+   */
+  async function removeFromRoutine(exerciseId) {
+    if (!routineId) return
+    const ids = (routines.find(r => r.id === routineId)?.exercise_ids || []).filter(id => id !== exerciseId)
+    await setRoutineExercises(routineId, ids)
+    setRoutines(prev => prev.map(r => (r.id === routineId ? { ...r, exercise_ids: ids } : r)))
+  }
+
+  /**
+   * Add an exercise to the routine.
+   *
+   * It joins the end of the routine and appears in the session, because a routine you
+   * just added something to should show it.
+   */
+  async function addToRoutine(exercise) {
+    if (!routineId) return
+    const ids = routines.find(r => r.id === routineId)?.exercise_ids || []
+    if (ids.includes(exercise.id)) return
+    const next = [...ids, exercise.id]
+    await setRoutineExercises(routineId, next)
+    setRoutines(prev => prev.map(r => (r.id === routineId ? { ...r, exercise_ids: next } : r)))
+    setLogs(prev => {
+      // The exercise that was passed in, not a lookup: the library entry was added a
+      // moment ago, so this render's `exercises` does not have it yet. Looking it up
+      // here would find nothing and the card would silently not appear.
+      if (prev.some(card => card.exercise_id === exercise.id)) return prev
+      return [...prev, emptyLog(exercise, prev.length)]
+    })
+  }
+
+  /**
+   * Put a dataset exercise in the library, if it is not there already.
+   *
+   * An exercise that is already in the library is left exactly as it is. Writing it
+   * again would give it a fresh `order`, which moves it to the end of the library —
+   * and with routines the library order is cosmetic, but the Exercises tab still shows
+   * it, and an exercise jumping about is its own small mystery.
+   */
+  async function ensureInLibrary(ex) {
+    const existing = exercises.find(e => e.id === ex.id)
+    if (existing) return existing
+
     const record = {
       id: ex.id,
       name: titleCase(ex.name),
@@ -397,9 +567,35 @@ export default function LogWorkout() {
       await saveExercise(record)
     } catch (err) {
       setSaveError(`Could not save “${record.name}” to your library: ${err.message}`)
-      return
+      return null
     }
     setExercises(prev => (prev.some(e => e.id === record.id) ? prev : [...prev, record]))
+    return record
+  }
+
+  /**
+   * Add a dataset exercise to the routine being edited.
+   *
+   * It has to exist in the library first: routine_exercises.exercise_id is a foreign
+   * key to exercises(id), and a routine cannot hold an exercise that does not exist.
+   */
+  async function addExerciseToRoutine(ex) {
+    const record = await ensureInLibrary(ex)
+    if (!record) return
+    await addToRoutine(record)
+  }
+
+  /**
+   * Persist the picked exercise to the library before adding it to the log.
+   *
+   * exercise_logs.exercise_id is a foreign key to exercises(id). Previously this
+   * only touched React state, so the log insert failed the FK check, the error was
+   * discarded, and every log in the session — including the pre-loaded ten — was
+   * dropped from the cloud. History then showed the session with no exercises.
+   */
+  async function addExercise(ex) {
+    const record = await ensureInLibrary(ex)
+    if (!record) return
     setLogs(prev => [...prev, emptyLog(record, prev.length)])
   }
 
@@ -482,6 +678,9 @@ export default function LogWorkout() {
       // Editing a saved workout is different: it was never being timed, and the row's
       // own start instant is left exactly as it was.
       ...(isEditMode ? {} : { started_at: null }),
+      // Which routine the session was logged from, so the history can say where it
+      // came from and the Log tab can reopen it.
+      routine_id: routineId,
       exercise_logs: logs
         .filter(log => log.set_entries.some(s => s.weight || s.reps))
         .map((log, i) => ({
@@ -514,6 +713,9 @@ export default function LogWorkout() {
 
   const loggedCount = logs.filter(l => l.set_entries.some(s => s.weight || s.reps)).length
 
+  // The name of the routine being logged, for the header.
+  const routineName = routines.find(r => r.id === routineId)?.name || 'Workout'
+
   return (
     <div className="screen">
       {/* Header.
@@ -544,40 +746,54 @@ export default function LogWorkout() {
               textOverflow: 'ellipsis',
             }}
           >
-            {isEditMode ? 'Edit Session' : 'Log Workout'}
+            {isEditMode ? 'Edit Session' : editingRoutine ? routineName : picking ? 'Log Workout' : routineName}
           </h1>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-            <input
-              type="date"
-              value={date}
-              max={todayISO()}
-              aria-label="Session date"
-              onChange={e => setDate(e.target.value)}
-              style={{ width: 'auto', flexShrink: 0, fontSize: 'var(--type-subhead)', padding: '0 10px' }}
-            />
-            {/* Standing guard rather than an error message. If the badge is absent, the
-                date is not today — which is the one thing worth noticing here, and the
-                thing that was previously silent. */}
-            {date === todayISO() ? (
-              <span
-                className="tnum"
-                style={{ fontSize: 'var(--type-fine)', color: 'var(--ink-muted)', whiteSpace: 'nowrap' }}
-              >
-                Today
-              </span>
-            ) : (
-              <span
-                className="tnum"
-                style={{ fontSize: 'var(--type-fine)', color: 'var(--destructive)', whiteSpace: 'nowrap' }}
-              >
-                Not today
-              </span>
-            )}
-          </div>
+          {!picking && !editingRoutine && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+              <input
+                type="date"
+                value={date}
+                max={todayISO()}
+                aria-label="Session date"
+                onChange={e => setDate(e.target.value)}
+                style={{ width: 'auto', flexShrink: 0, fontSize: 'var(--type-subhead)', padding: '0 10px' }}
+              />
+              {/* Standing guard rather than an error message. If the badge is absent, the
+                  date is not today — which is the one thing worth noticing here, and the
+                  thing that was previously silent. */}
+              {date === todayISO() ? (
+                <span
+                  className="tnum"
+                  style={{ fontSize: 'var(--type-fine)', color: 'var(--ink-muted)', whiteSpace: 'nowrap' }}
+                >
+                  Today
+                </span>
+              ) : (
+                <span
+                  className="tnum"
+                  style={{ fontSize: 'var(--type-fine)', color: 'var(--destructive)', whiteSpace: 'nowrap' }}
+                >
+                  Not today
+                </span>
+              )}
+            </div>
+          )}
         </div>
 
-        {(hasDraft || autosaveState) && (
+        {(hasDraft || autosaveState || (!picking && !editingRoutine && !isEditMode)) && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
+            {!picking && !editingRoutine && !isEditMode && (
+              <>
+                <button onClick={() => setPicking(true)} className="chip" style={{ minHeight: 36 }}>
+                  <ArrowLeft size={14} /> Routines
+                </button>
+                {routineId && (
+                  <button onClick={() => setEditingRoutine(true)} className="chip" style={{ minHeight: 36 }}>
+                    Edit routine
+                  </button>
+                )}
+              </>
+            )}
             {hasDraft && !isEditMode && (
               <button onClick={discardCurrentDraft} className="chip" style={{ minHeight: 36 }}>
                 <RotateCcw size={14} /> {formatDate(date)}
@@ -608,6 +824,18 @@ export default function LogWorkout() {
         )}
       </div>
 
+      {editingRoutine ? (
+        <RoutineEditor
+          exercises={routineExerciseEntries(routineId)}
+          onReorder={reorderRoutine}
+          onRemove={removeFromRoutine}
+          onAdd={() => setPickerMode('routine')}
+          onDone={() => setEditingRoutine(false)}
+        />
+      ) : picking ? (
+        <RoutinePicker routines={routines} onPick={pickRoutine} onCreate={createRoutine} />
+      ) : (
+        <>
       {/* Session time.
           The live readout while logging, and the editable field when editing a session
           that was already saved. One place for both, because it is the same fact: how
@@ -843,21 +1071,10 @@ export default function LogWorkout() {
 
       {/* Add exercise — a ghost pill, not a dashed outline. The old border was
           1.37:1, which is indistinguishable from no border at all. */}
-      <button onClick={() => setShowPicker(true)} className="btn-secondary btn-block" style={{ marginBottom: 16 }}>
+      <button onClick={() => setPickerMode('session')} className="btn-secondary btn-block" style={{ marginBottom: 16 }}>
         <Plus size={18} />
         Add Exercise
       </button>
-
-      {showPicker && (
-        <ExercisePicker
-          onClose={() => setShowPicker(false)}
-          usedIds={logs.map(l => l.exercise_id)}
-          onSelect={ex => {
-            addExercise(ex)
-            setShowPicker(false)
-          }}
-        />
-      )}
 
       {/* Notes */}
       <label htmlFor="session-notes" className="section-label" style={{ display: 'block' }}>
@@ -895,6 +1112,22 @@ export default function LogWorkout() {
         <Check size={20} />
         {saving ? 'Saving…' : loggedCount === 0 ? 'Enter a set to save' : 'Save Session'}
       </button>
+        </>
+      )}
+
+      {pickerMode && (
+        <ExercisePicker
+          onClose={() => setPickerMode(null)}
+          usedIds={pickerMode === 'routine'
+            ? (routines.find(r => r.id === routineId)?.exercise_ids || [])
+            : logs.map(l => l.exercise_id)}
+          onSelect={ex => {
+            if (pickerMode === 'routine') addExerciseToRoutine(ex)
+            else addExercise(ex)
+            setPickerMode(null)
+          }}
+        />
+      )}
     </div>
   )
 }
