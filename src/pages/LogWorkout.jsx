@@ -687,23 +687,10 @@ export default function LogWorkout() {
     await addToRoutine(record)
   }
 
-  /**
-   * Persist the picked exercise to the library before adding it to the log.
-   *
-   * exercise_logs.exercise_id is a foreign key to exercises(id). Previously this
-   * only touched React state, so the log insert failed the FK check, the error was
-   * discarded, and every log in the session — including the pre-loaded ten — was
-   * dropped from the cloud. History then showed the session with no exercises.
-   */
-  async function addExercise(ex) {
-    const record = await ensureInLibrary(ex)
-    if (!record) return
-    setLogs(prev => [...prev, emptyLog(record, prev.length)])
-  }
-
-  function removeLog(logId) {
-    setLogs(prev => prev.filter(l => l.id !== logId))
-  }
+  // Adding or removing an exercise is a change to the *plan*, so it lives only in the
+  // routine editor. While logging, the cards come from the routine (or the whole
+  // library when there is no routine) and stay put: a tap meant to delete a set could
+  // otherwise delete the exercise card itself, which is much harder to notice.
 
   function toggleCollapse(logId) {
     setCollapsed(prev => ({ ...prev, [logId]: !prev[logId] }))
@@ -1134,14 +1121,6 @@ export default function LogWorkout() {
                   <ChevronUp size={18} color="var(--ink-muted)" style={{ flexShrink: 0 }} />
                 )}
               </button>
-              <button
-                onClick={() => removeLog(log.id)}
-                aria-label={`Remove ${log._name}`}
-                className="btn-icon"
-                style={{ flexShrink: 0 }}
-              >
-                <Trash2 size={17} color="var(--ink-muted)" />
-              </button>
             </div>
 
             {!isCollapsed && (
@@ -1249,13 +1228,6 @@ export default function LogWorkout() {
         )
       })}
 
-      {/* Add exercise — a ghost pill, not a dashed outline. The old border was
-          1.37:1, which is indistinguishable from no border at all. */}
-      <button onClick={() => setPickerMode('session')} className="btn-secondary btn-block" style={{ marginBottom: 16 }}>
-        <Plus size={18} />
-        Add Exercise
-      </button>
-
       {/* Notes */}
       <label htmlFor="session-notes" className="section-label" style={{ display: 'block' }}>
         Notes
@@ -1298,12 +1270,10 @@ export default function LogWorkout() {
       {pickerMode && (
         <ExercisePicker
           onClose={() => setPickerMode(null)}
-          usedIds={pickerMode === 'routine'
-            ? (routines.find(r => r.id === routineId)?.exercise_ids || [])
-            : logs.map(l => l.exercise_id)}
+          usedIds={routines.find(r => r.id === routineId)?.exercise_ids || []}
           onSelect={ex => {
-            if (pickerMode === 'routine') addExerciseToRoutine(ex)
-            else addExercise(ex)
+            // The picker is only opened from the routine editor now.
+            addExerciseToRoutine(ex)
             setPickerMode(null)
           }}
         />
