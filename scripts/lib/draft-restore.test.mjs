@@ -7,7 +7,7 @@
 // exercise showed that one card alone — the rest of the page you left was gone, which
 // reads as "my workout was lost" even though the data was intact.
 
-import { mergeWithLibrary, blankEditor } from '../../src/lib/draft.js'
+import { mergeWithLibrary, blankEditor, mergeDraftLogs } from '../../src/lib/draft.js'
 
 // draft.js takes its id generator as an argument precisely so it stays import-free and can
 // be loaded directly here. generateId normally comes from utils; a counter is enough.
@@ -97,6 +97,50 @@ console.log('Restoring a draft\n')
   const merged = mergeWithLibrary(lib, [filled('1')], newId)
   const noSharedSets = merged.every(l => !l.set_entries.some(s => s.id === undefined))
   check('no set is left undefined', noSharedSets)
+}
+
+// An empty mirror must not beat a full cloud draft. This was the silent-loss case:
+// the timer ran with no cards, so the mirror held a blank editor, and the restore
+// preferred it over the sets that were still intact in Postgres.
+{
+  const emptyMirror = [
+    { id: 'm1', exercise_id: '1', order: 0, set_entries: [{ id: 'e1', set_number: 1, weight: '', reps: '' }] },
+  ]
+  const fullCloud = [filled('1'), filled('3')]
+  const merged = mergeDraftLogs(emptyMirror, fullCloud, card => card.set_entries.some(s => s.weight || s.reps))
+  check('an empty mirror loses to a filled cloud card',
+    merged.find(l => l.exercise_id === '1').set_entries.some(s => s.weight === '60'))
+  check('other filled cloud cards survive', merged.some(l => l.exercise_id === '3'))
+}
+
+// Where both copies have content, the mirror is fresher and wins.
+{
+  const mirror = [{ ...filled('1'), id: 'mirror-card' }]
+  const cloud = [{ ...filled('1'), id: 'cloud-card' }]
+  const merged = mergeDraftLogs(mirror, cloud, card => card.set_entries.some(s => s.weight || s.reps))
+  check('a filled mirror wins over a filled cloud card', merged[0].id === 'mirror-card')
+  check('and the union has no duplicate card', merged.length === 1)
+}
+
+// A card only in the mirror is kept even when it is empty; it is simply not promoted
+// into a filled card by the merge.
+{
+  const mirror = [
+    { id: 'm1', exercise_id: '1', order: 0, set_entries: [{ id: 'e1', set_number: 1, weight: '', reps: '' }] },
+    { id: 'm2', exercise_id: '4', order: 1, set_entries: [{ id: 'e2', set_number: 1, weight: '80', reps: '5' }] },
+  ]
+  const has = card => card.set_entries.some(s => s.weight || s.reps)
+  const merged = mergeDraftLogs(mirror, undefined, has)
+  check('both cards are in the union', merged.length === 2)
+  check('an empty card stays empty', !has(merged.find(l => l.exercise_id === '1')))
+  check('a filled mirror card stays filled', has(merged.find(l => l.exercise_id === '4')))
+}
+
+// Degenerate inputs must not throw; a missing copy is treated as empty.
+{
+  check('no copies is fine', mergeDraftLogs(undefined, undefined, () => false).length === 0)
+  check('mirror only is fine', mergeDraftLogs([filled('1')], null, () => true).length === 1)
+  check('cloud only is fine', mergeDraftLogs(null, [filled('1')], () => true).length === 1)
 }
 
 console.log(`\n${failures === 0 ? 'Restore rebuilds the whole editor.' : `${failures} FAILED.`}`)

@@ -1,13 +1,21 @@
 // src/pages/History.jsx
 import { useEffect, useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ChevronRight, Dumbbell, Trash2, ChevronLeft, Clock } from 'lucide-react'
-import { getSessionSummaries, deleteSession } from '../lib/db'
+import { ChevronRight, ChevronUp, ChevronDown, RotateCcw, Dumbbell, Trash2, ChevronLeft, Clock } from 'lucide-react'
+import { getSessionSummaries, getDiscardedSessions, deleteSession, restoreSession, purgeSession } from '../lib/db'
 import { todayISO, formatDuration } from '../lib/utils'
 import ConfirmDialog from '../components/ConfirmDialog'
 
 const DAY_LABELS = ['M', 'T', 'W', 'T', 'F', 'S', 'S']
 const MONTH_LABELS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
+
+/** When a row was discarded, in the device's own time. */
+function discardedWhen(value) {
+  if (!value) return ''
+  return new Date(value).toLocaleString('en-GB', {
+    day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
+  })
+}
 
 function CalendarGrid({ year, month, sessionsByDate, onDayClick }) {
   // todayISO, not an inline toISOString: UTC would highlight the wrong day for anyone
@@ -60,6 +68,11 @@ function CalendarGrid({ year, month, sessionsByDate, onDayClick }) {
 export default function History() {
   const [sessions, setSessions] = useState([])
   const [pendingDelete, setPendingDelete] = useState(null)
+  // Discarded rows live below the real workouts, collapsed by default. Nothing is
+  // hidden permanently: "discarded" now means "recoverable", not "gone".
+  const [discarded, setDiscarded] = useState([])
+  const [showDiscarded, setShowDiscarded] = useState(false)
+  const [pendingPurge, setPendingPurge] = useState(null)
   const navigate = useNavigate()
 
   // Captured once on mount: the calendar opens on the month the user is looking at, and a
@@ -68,12 +81,40 @@ export default function History() {
   const [calYear, setCalYear] = useState(now.getFullYear())
   const [calMonth, setCalMonth] = useState(now.getMonth())
 
+  // Both lists together, so a restore or a purge refreshes the live workouts and the
+  // discarded rows in the same pass and the two never disagree about where a row is.
+  async function refresh() {
+    const [live, gone] = await Promise.all([getSessionSummaries(), getDiscardedSessions()])
+    setSessions(live)
+    setDiscarded(gone)
+  }
+
   useEffect(() => {
     // The summaries, not the full session trees. This list shows a date, a volume, an
     // exercise count and a couple of names — and every set of every session used to
     // travel over the network to produce them.
-    getSessionSummaries().then(setSessions)
+    refresh()
   }, [])
+
+  async function confirmRestore(row) {
+    await restoreSession(row.id)
+    // A restored draft belongs in the Log tab, where the editor picks it up and the
+    // workout can simply be continued. A restored saved workout belongs back here.
+    if (row.is_draft) navigate('/log')
+    else await refresh()
+  }
+
+  async function confirmPurge() {
+    const target = pendingPurge
+    setPendingPurge(null)
+    if (!target) return
+    try {
+      await purgeSession(target.id)
+      await refresh()
+    } catch (err) {
+      alert(`Could not delete the discarded workout: ${err.message}`)
+    }
+  }
 
   const sessionsByDate = useMemo(() => {
     const map = {}
@@ -111,6 +152,9 @@ export default function History() {
     try {
       await deleteSession(target.id)
       setSessions(prev => prev.filter(s => s.id !== target.id))
+      // The row moved to Discarded rather than disappearing, so refresh that list too.
+      const gone = await getDiscardedSessions()
+      setDiscarded(gone)
     } catch (err) {
       alert(`Could not delete the session: ${err.message}`)
     }
@@ -274,16 +318,81 @@ export default function History() {
         )
       })}
 
+      {discarded.length > 0 && (
+        <section style={{ marginBottom: 24 }}>
+          <button
+            onClick={() => setShowDiscarded(v => !v)}
+            aria-expanded={showDiscarded}
+            className="btn-quiet"
+            style={{ width: '100%', justifyContent: 'space-between', marginBottom: showDiscarded ? 8 : 0 }}
+          >
+            <span>Discarded ({discarded.length})</span>
+            {showDiscarded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+          </button>
+
+          {showDiscarded && discarded.map(row => (
+            <div key={row.id} className="card" style={{ padding: 12, marginBottom: 8 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontWeight: 600, fontSize: 'var(--type-subhead)' }}>
+                    {formatDate(row.date)}
+                  </div>
+                  <div style={{ color: 'var(--ink-muted)', fontSize: 'var(--type-fine)' }}>
+                    {row.is_draft ? 'Unfinished workout' : 'Deleted workout'}
+                    {row.deleted_at && ` · discarded ${discardedWhen(row.deleted_at)}`}
+                  </div>
+                </div>
+                <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                  <div className="tnum" style={{ fontWeight: 600, color: 'var(--primary)', fontSize: 'var(--type-subhead)' }}>
+                    {Math.round(row.volume)} kg
+                  </div>
+                  <div style={{ color: 'var(--ink-muted)', fontSize: 'var(--type-fine)' }}>
+                    {row.exercise_count || 0} ex · {row.set_count || 0} sets
+                    {row.duration_seconds ? ` · ${formatDuration(row.duration_seconds)}` : ''}
+                  </div>
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: 8, marginTop: 10, alignItems: 'center' }}>
+                <button onClick={() => confirmRestore(row)} className="btn-secondary" style={{ flex: 1 }}>
+                  <RotateCcw size={15} />
+                  {row.is_draft ? 'Resume workout' : 'Restore'}
+                </button>
+                <button
+                  onClick={() => setPendingPurge(row)}
+                  className="btn-quiet"
+                  style={{ color: 'var(--destructive)' }}
+                >
+                  <Trash2 size={15} /> Delete forever
+                </button>
+              </div>
+            </div>
+          ))}
+        </section>
+      )}
+
       <ConfirmDialog
         open={Boolean(pendingDelete)}
         title="Delete this session?"
         message={
           pendingDelete
-            ? `${new Date(pendingDelete.date + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'long' })} and all of its logged sets will be removed. This cannot be undone.`
+            ? `${new Date(pendingDelete.date + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'long' })} and all of its logged sets will move to Discarded. You can restore it from there.`
             : ''
         }
         onCancel={() => setPendingDelete(null)}
         onConfirm={confirmDelete}
+      />
+
+      <ConfirmDialog
+        open={Boolean(pendingPurge)}
+        title="Delete forever?"
+        message={
+          pendingPurge
+            ? `This permanently removes the ${pendingPurge.is_draft ? 'unfinished workout' : 'workout'} from ${formatDate(pendingPurge.date)} and all of its logged sets. It cannot be undone.`
+            : ''
+        }
+        confirmLabel="Delete forever"
+        onCancel={() => setPendingPurge(null)}
+        onConfirm={confirmPurge}
       />
     </div>
   )
