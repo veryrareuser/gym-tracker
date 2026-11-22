@@ -81,3 +81,37 @@ export function mergeWithLibrary(exercises, savedLogs, newId) {
 
   return merged
 }
+
+/**
+ * Choose which copy of each card wins when the local mirror and the cloud draft
+ * disagree.
+ *
+ * The mirror used to win unconditionally. That was silent data loss: the mirror is
+ * written whenever the timer runs with no cards, so an empty mirror beat a full cloud
+ * draft and the editor opened blank while the sets still existed in Postgres.
+ *
+ * Rule, per exercise id:
+ *   - the mirror card if it has content (the freshest thing on this device)
+ *   - else the cloud card if it has content (the copy that survived a killed tab)
+ *   - else the mirror card (the latest state of an empty card)
+ * A card with no sets in either copy is never resurrected as a filled card by this
+ * function — mergeWithLibrary decides what a filled card looks like on screen.
+ *
+ * `hasContent` is injected rather than imported so this module stays free of imports
+ * and can be loaded directly by a plain node test, like the rest of the file.
+ */
+export function mergeDraftLogs(mirrorLogs, cloudLogs, hasContent) {
+  const filled = hasContent || (log => (log?.set_entries || []).some(s => s.weight || s.reps))
+  const byExercise = new Map()
+  for (const log of cloudLogs || []) byExercise.set(log.exercise_id, log)
+  for (const log of mirrorLogs || []) {
+    const cloudCard = byExercise.get(log.exercise_id)
+    if (!cloudCard) {
+      byExercise.set(log.exercise_id, log)
+      continue
+    }
+    if (filled(log) || !filled(cloudCard)) byExercise.set(log.exercise_id, log)
+    // Otherwise keep the filled cloud card: an empty mirror must not erase it.
+  }
+  return [...byExercise.values()]
+}

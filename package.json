@@ -35,6 +35,8 @@
     "verify:bodymap": "node scripts/lib/body-map-interaction.test.mjs",
     "verify:drafts": "node scripts/lib/draft-isolation.test.mjs",
     "verify:restore": "node scripts/lib/draft-restore.test.mjs",
+    "verify:recovery": "node scripts/lib/discard-recovery.test.mjs",
+    "verify:recovery-db": "node scripts/verify-recovery.mjs",
     "verify:buckets": "node scripts/lib/volume-buckets.test.mjs",
     "verify:pwa": "node scripts/lib/pwa-assets.test.mjs",
     "verify:date-default": "node scripts/verify-date-default.mjs"

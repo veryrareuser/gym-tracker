@@ -6,8 +6,9 @@
 --
 -- Reference copy. The live definitions were replaced by sql/session-drafts.sql, which
 -- drops each signature explicitly first -- CREATE OR REPLACE cannot change an argument
--- list (PROJECT_UNDERSTANDING.md, Trap 1). Keep the two in step: npm run verify:drafts
--- asserts the filters are present here.
+-- list (PROJECT_UNDERSTANDING.md, Trap 1), and then by sql/session-soft-delete.sql, which
+-- added the deleted_at predicates below with the signatures unchanged. Keep the two in
+-- step: npm run verify:drafts asserts the filters are present here.
 
 CREATE OR REPLACE FUNCTION public.leaderboard(p_month_start date DEFAULT NULL::date)
  RETURNS TABLE(username text, volume_month numeric, sessions_month bigint, best_set numeric, total_volume numeric, total_sessions bigint)
@@ -36,6 +37,7 @@ AS $function$
     cross join bounds b
     where w.date between b.start_at and b.end_at
       and not coalesce(w.is_draft, false)
+      and w.deleted_at is null
     group by w.user_id
   ),
   lifetime as (
@@ -47,6 +49,7 @@ AS $function$
     join public.exercise_logs l on l.session_id = w.id and l.user_id = w.user_id
     join public.set_entries s on s.exercise_log_id = l.id and s.user_id = l.user_id
     where not coalesce(w.is_draft, false)
+      and w.deleted_at is null
     group by w.user_id
   ),
   best as (
@@ -58,6 +61,7 @@ AS $function$
     join public.set_entries s on s.exercise_log_id = l.id and s.user_id = l.user_id
     where s.weight is not null
       and not coalesce(w.is_draft, false)
+      and w.deleted_at is null
     group by w.user_id
   )
   select
@@ -111,6 +115,7 @@ AS $function$
       -- A friend's records are the most privacy-sensitive surface in the app. An
       -- in-progress set must never be published there.
       and not coalesce(s.is_draft, false)
+      and s.deleted_at is null
   )
   select
     e.name,

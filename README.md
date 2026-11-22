@@ -340,7 +340,7 @@ These are the CI gate, in this order:
 ```
 verify:dates  verify:storage  verify:duration  verify:routines
 verify:stopwatch-unit  verify:cache  verify:render  verify:geometry
-verify:bodymap  verify:drafts  verify:restore  verify:buckets
+verify:bodymap  verify:drafts  verify:restore  verify:recovery  verify:buckets
 build  verify:pwa  verify:sw
 ```
 
@@ -364,6 +364,7 @@ These need credentials and a real browser, and are run by hand:
 | `verify:save-once` | the four variables | That one tap on Save leaves the workout in History. |
 | `verify:routines-browser` | the four variables | Creating a routine, adding exercises, and a **real mouse drag** on the grip handle. |
 | `verify:routine-return` | the four variables | That the Log tab comes back to the screen you left it on, and that picking a routine never loses a set. |
+| `verify:recovery-db` | the four variables | That a discarded draft can be listed, restored and then purged, with its sets intact throughout. |
 
 The browser suites drive headless Chrome over CDP rather than Playwright, and serve
 `dist/` with `scripts/serve-dist.mjs`. Their ports must differ from each other and

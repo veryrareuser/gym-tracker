@@ -515,6 +515,7 @@ export async function getSessions() {
         .from('workout_sessions')
         .select(SESSION_FIELDS)
         .eq('is_draft', false)
+        .is('deleted_at', null)
         .order('date', { ascending: false })
       if (!error && data) {
         const sessions = data.map(s => ({ ...s, exercise_logs: sortLogs(s.exercise_logs) }))
@@ -523,7 +524,7 @@ export async function getSessions() {
       }
     }
     return localGet('sessions')
-      .filter(s => !s.is_draft)
+      .filter(s => !s.is_draft && !s.deleted_at)
       .map(s => ({ ...s, exercise_logs: sortLogs(s.exercise_logs) }))
       .sort((a, b) => b.date.localeCompare(a.date))
   })
@@ -550,6 +551,7 @@ export async function getSessionSummaries() {
         .from('session_summaries')
         .select('id,date,notes,duration_seconds,is_draft,volume,set_count,exercise_count,exercise_names')
         .eq('is_draft', false)
+        .is('deleted_at', null)
         .order('date', { ascending: false })
       if (!error && data) {
         localSet('summaries', data)
@@ -557,7 +559,7 @@ export async function getSessionSummaries() {
       }
     }
     return localGet('summaries')
-      .filter(s => !s.is_draft)
+      .filter(s => !s.is_draft && !s.deleted_at)
       .sort((a, b) => b.date.localeCompare(a.date))
   })
 }
@@ -577,10 +579,11 @@ export async function getSession(id) {
       .select(SESSION_FIELDS)
       .eq('id', id)
       .eq('is_draft', false)
+      .is('deleted_at', null)
       .maybeSingle()
     if (!error && data) return { ...data, exercise_logs: sortLogs(data.exercise_logs) }
   }
-  const cached = localGet('sessions').find(s => s.id === id)
+  const cached = localGet('sessions').find(s => s.id === id && !s.deleted_at)
   return cached ? { ...cached, exercise_logs: sortLogs(cached.exercise_logs) } : null
 }
 
@@ -599,6 +602,7 @@ export async function getDraft() {
     // where it was rather than starting over.
     .select('id,date,notes,started_at,duration_seconds,routine_id,exercise_logs(id,session_id,exercise_id,order,set_entries(id,exercise_log_id,set_number,weight,reps,note))')
     .eq('is_draft', true)
+    .is('deleted_at', null)
     .order('created_at', { ascending: false })
     .limit(1)
   if (error || !data || data.length === 0) return null
@@ -607,17 +611,95 @@ export async function getDraft() {
 }
 
 /**
- * Throw away the account's draft without touching saved workouts.
+ * Discard the account's live draft without touching saved workouts.
  *
- * Called when a draft is abandoned or replaced. Scoped to is_draft so it can never delete
- * a real session, whatever id is passed.
+ * A discard is a soft delete now: the row, its logs and every set stay in Postgres with a
+ * deleted_at stamp, so the workout can be restored from History → Discarded. Scoped to
+ * is_draft and to rows that are still live, so a second tap cannot re-stamp an old one.
+ * The id is returned because the Log page's Undo needs to know which row to bring back.
  */
 export async function discardDraft() {
+  if (!supabase) return null
+  const { data, error } = await supabase
+    .from('workout_sessions')
+    .update({ deleted_at: new Date().toISOString() })
+    .eq('is_draft', true)
+    .is('deleted_at', null)
+    .select('id')
+  unwrap({ error }, 'discard draft')
+  return data?.[0]?.id ?? null
+}
+
+/**
+ * The account's discarded workouts, newest first.
+ *
+ * Not memoised: a restore or a purge changes this list, and showing yesterday's rows
+ * until a 30-second cache expires would be a poor joke on someone looking for a workout
+ * they just threw away. Reads the summaries view, so it costs one small query and needs
+ * no aggregate of its own.
+ */
+export async function getDiscardedSessions() {
+  if (!supabase) return []
+  const { data, error } = await supabase
+    .from('session_summaries')
+    .select('id,date,notes,duration_seconds,is_draft,volume,set_count,exercise_count,exercise_names,deleted_at')
+    .not('deleted_at', 'is', null)
+    .order('deleted_at', { ascending: false })
+  unwrap({ error }, 'list discarded sessions')
+  return data || []
+}
+
+/**
+ * Bring a discarded row back.
+ *
+ * Restoring a draft has one extra rule: there can be only one live draft per account,
+ * so any draft that started in the meantime is retired to the discarded list first. The
+ * row being restored wins — that is what the user asked for when they tapped Restore.
+ */
+export async function restoreSession(id) {
+  if (!supabase) return null
+  const { data: row, error: readError } = await supabase
+    .from('workout_sessions')
+    .select('id,is_draft')
+    .eq('id', id)
+    .maybeSingle()
+  unwrap({ error: readError }, `find session ${id} to restore`)
+  if (!row) return null
+
+  if (row.is_draft) {
+    // The partial unique index would reject two live drafts, so retire the other one
+    // before clearing this row's stamp. The other row is not deleted: it goes to the
+    // discarded list, where it can be restored in its turn.
+    unwrap(
+      await supabase
+        .from('workout_sessions')
+        .update({ deleted_at: new Date().toISOString() })
+        .eq('is_draft', true)
+        .is('deleted_at', null)
+        .neq('id', id),
+      `retire the other draft while restoring ${id}`,
+    )
+  }
+
+  const { error } = await supabase
+    .from('workout_sessions')
+    .update({ deleted_at: null })
+    .eq('id', id)
+  unwrap({ error }, `restore session ${id}`)
+  invalidate(memo.sessions, memo.summaries)
+  return row
+}
+
+/** Delete forever — the only irreversible operation in the app. Discarded rows only. */
+export async function purgeSession(id) {
   if (!supabase) return
   unwrap(
-    await supabase.from('workout_sessions').delete().eq('is_draft', true),
-    'discard draft',
+    await supabase.from('workout_sessions').delete().eq('id', id).not('deleted_at', 'is', null),
+    `purge session ${id}`,
   )
+  localSet('sessions', localGet('sessions').filter(s => s.id !== id))
+  localSet('summaries', localGet('summaries').filter(s => s.id !== id))
+  invalidate(memo.sessions, memo.summaries)
 }
 
 /** PostgREST returns nested rows unordered; `order` is the only intended sequence. */
@@ -660,9 +742,44 @@ export async function saveSession(session, { draft = false } = {}) {
   if (!supabase) return session
 
   if (draft) {
-    // One draft per account: clear the previous one before writing this.
-    // Scoped by is_draft so a saved workout is untouchable here.
-    unwrap(await supabase.from('workout_sessions').delete().eq('is_draft', true), 'replace previous draft')
+    // A finished workout must never become a draft again.
+    //
+    // A draft and the finished workout are the same row: the save flips is_draft from
+    // true to false, and a draft write sets it back to true. So a draft write that
+    // lands after the save turns a finished workout back into a draft. That is the
+    // "I have to press Save twice" bug, and it is worse than it looks: a row with the
+    // flag set is invisible in History, and the next draft write sweeps it away
+    // outright, because one draft per account means every draft goes. The workout was
+    // saved, then it was not there any more, and nothing in the app had deleted it.
+    //
+    // The read is what makes the guard honest. If the row is already a finished
+    // workout, the draft has nothing left to protect — the thing it was protecting is
+    // the workout that was just saved — and writing it would only undo the save.
+    const { data: existing } = await supabase
+      .from('workout_sessions')
+      .select('id, is_draft, deleted_at')
+      .eq('id', session.id)
+      .limit(1)
+    const current = existing?.[0]
+    // A discarded row must stay discarded until it is explicitly restored. A draft write
+    // that lands after a discard used to resurrect the row as a live draft; now it leaves
+    // it alone, exactly as it leaves a finished workout alone.
+    if (current && (!current.is_draft || current.deleted_at)) return session
+
+    // One draft per account: retire the previous live draft before writing this. A soft
+    // retire, so the previous workout is recoverable from History → Discarded instead of
+    // vanishing. Scoped by is_draft and deleted_at, so a saved workout is untouchable
+    // here, and exclude this row so a repeat write of the same draft does not discard
+    // itself (which would leave the upsert below writing a freshly discarded row).
+    unwrap(
+      await supabase
+        .from('workout_sessions')
+        .update({ deleted_at: new Date().toISOString() })
+        .eq('is_draft', true)
+        .is('deleted_at', null)
+        .neq('id', session.id),
+      'replace previous draft',
+    )
   }
 
   // 1. Session header.
@@ -776,11 +893,26 @@ function toNumberOrNull(value) {
   return Number.isFinite(n) ? n : null
 }
 
+/**
+ * Delete a saved workout from History.
+ *
+ * Soft now: the row and its whole tree stay in Postgres with a deleted_at stamp, and the
+ * session appears in History → Discarded with a Restore action. The local eviction is
+ * kept so the row disappears from the immediately visible list even before the caches
+ * are invalidated.
+ */
 export async function deleteSession(id) {
   if (supabase) {
-    // Remote first, so a rejection leaves no local trace. Cascades to exercise_logs
-    // and set_entries.
-    unwrap(await supabase.from('workout_sessions').delete().eq('id', id), `delete session ${id}`)
+    // Remote first, so a rejection leaves no local trace. The children are left exactly
+    // where they are — that is the point of a soft delete.
+    unwrap(
+      await supabase
+        .from('workout_sessions')
+        .update({ deleted_at: new Date().toISOString() })
+        .eq('id', id)
+        .is('deleted_at', null),
+      `delete session ${id}`,
+    )
   }
   localSet('sessions', localGet('sessions').filter(s => s.id !== id))
   localSet('summaries', localGet('summaries').filter(s => s.id !== id))

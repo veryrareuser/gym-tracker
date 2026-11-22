@@ -1,18 +1,19 @@
 // src/pages/LogWorkout.jsx
 import { useCallback, useEffect, useMemo, useState, useRef } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { Plus, Trash2, ChevronDown, ChevronUp, Check, ArrowLeft, RotateCcw, Clock, CircleAlert, Dumbbell } from 'lucide-react'
-import { getExercises, getSession, getDraft, discardDraft, saveExercise, saveSession, getRoutines, saveRoutine, setRoutineExercises } from '../lib/db'
+import { Plus, Trash2, ChevronDown, ChevronUp, Check, ArrowLeft, Clock, CircleAlert, Dumbbell } from 'lucide-react'
+import { getExercises, getSession, getDraft, discardDraft, restoreSession, saveExercise, saveSession, getRoutines, saveRoutine, setRoutineExercises } from '../lib/db'
 import { generateId, todayISO, formatDate, formatDuration, formatStopwatch } from '../lib/utils'
 import { imageUrl } from '../lib/exerciseDb'
 import { startStopwatch, pauseStopwatch, stopStopwatch, clearStopwatch, restoreStopwatch, readStopwatch, elapsedSeconds, elapsedMs, isRunning } from '../lib/stopwatch'
 import useAutosave from '../lib/useAutosave'
-import { mergeWithLibrary } from '../lib/draft'
+import { mergeWithLibrary, mergeDraftLogs } from '../lib/draft'
 import { mergeOrder, mergeRoutineCards, cardHasContent } from '../lib/routines'
 import { currentUserId } from '../lib/auth'
 import ExercisePicker from '../components/ExercisePicker'
 import RoutinePicker from '../components/RoutinePicker'
 import RoutineEditor from '../components/RoutineEditor'
+import ConfirmDialog from '../components/ConfirmDialog'
 
 // The draft is namespaced per user for the same reason the session cache is: an
 // in-progress workout belongs to whoever is typing it, and on a shared device an
@@ -73,6 +74,14 @@ export default function LogWorkout() {
   const [saveError, setSaveError] = useState(null)
   const [sessionNotes, setSessionNotes] = useState('')
   const [hasDraft, setHasDraft] = useState(false)
+  // Discard is a destructive action now, so it asks first and offers a way back. The
+  // undo banner is local to this page — there is no app-wide toast system, and adding
+  // one for a single action would be more surface than the fix needs.
+  const [confirmDiscard, setConfirmDiscard] = useState(false)
+  const [undo, setUndo] = useState(null)
+  // Bumped after an undo so the mount loader re-reads the restored row from Postgres
+  // instead of needing a page reload. The loader itself is a callback below.
+  const [reloadKey, setReloadKey] = useState(0)
   // Which picker is open, if any: 'session' to add an exercise to the workout being
   // logged, 'routine' to add one to the routine being edited.
   const [pickerMode, setPickerMode] = useState(null)
@@ -135,177 +144,176 @@ export default function LogWorkout() {
   // is actually edited.
   const [durationTouched, setDurationTouched] = useState(false)
 
+  // The mount loader, extracted so Undo can run it again after restoring the row.
+  // It takes a cancellation probe rather than closing over the effect's local flag,
+  // which keeps a late response from an aborted load from overwriting the restored
+  // editor.
+  const hydrateFromDraft = useCallback(async isCancelled => {
+    const [exs, routineList] = await Promise.all([getExercises(), getRoutines()])
+    if (isCancelled()) return
+    setExercises(exs)
+    setRoutines(routineList)
+
+    // The exercises a routine holds, in the routine's order, as library entries.
+    // An exercise that has since been deleted from the library is left out rather
+    // than shown as a blank card.
+    const routineExercises = id => {
+      const routine = routineList.find(r => r.id === id)
+      if (!routine) return []
+      return routine.exercise_ids
+        .map(eid => exs.find(e => e.id === eid))
+        .filter(Boolean)
+    }
+
+    if (isEditMode) {
+      // Only the one session being edited. This used to load every session in the
+      // account and pick one out of the result, which on a phone meant downloading
+      // 176 KB of other workouts to change this one.
+      const existing = await getSession(sessionId)
+      if (isCancelled()) return
+      if (existing) {
+        setDate(existing.date)
+        setSessionNotes(existing.notes || '')
+        // The routine the workout was logged from. Editing a workout must not wipe
+        // that: the save writes the routine id back, and an edit form that does not
+        // know it would quietly untie the workout from the plan it came from.
+        setRoutineId(existing.routine_id || null)
+        // Editing shows the workout. The routine list is for choosing what to log,
+        // and there is nothing to choose when a workout already exists.
+        setPicking(false)
+        const recorded = Number.isFinite(existing.duration_seconds) ? existing.duration_seconds : null
+        setDurationSeconds(recorded)
+        // The fields are pre-filled with the recorded duration rather than left
+        // blank. A workout that was measured should open its editor showing that
+        // measurement — otherwise the number is hidden behind an empty box, and
+        // saving would replace it with whatever the fields happened to say.
+        setDurationHours(recorded === null ? null : Math.floor(recorded / 3600))
+        setDurationMinutes(recorded === null ? null : Math.floor((recorded % 3600) / 60))
+        setLogs(
+          (existing.exercise_logs || []).map(log => {
+            const ex = exs.find(e => e.id === log.exercise_id)
+            return {
+              ...log,
+              _name: ex?.name || 'Unknown',
+              _image_url: ex?.image_url || null,
+            }
+          }),
+        )
+      }
+      loadedRef.current = true
+      return
+    }
+
+    // New session — restore a draft before falling back to a blank slate.
+    //
+    // Two copies are read, and they are not interchangeable. The cloud draft is the
+    // copy that survives the tab being killed or the account being signed out, and
+    // the one that carries a workout to another device. The local mirror is the copy
+    // this device actually has, and it is fresher.
+    const cloud = await getDraft()
+    if (isCancelled()) return
+
+    // The local mirror. It holds every card, including the empty ones the cloud
+    // draft drops — and it is where the user's last *navigation* lives.
+    //
+    // That second part matters. The cloud draft remembers which routine a workout
+    // belongs to, but it has no way of saying "the Log tab was left on the routine
+    // list". So it reopened the routine you had deliberately walked out of, and
+    // the Log tab argued with you every time you came back to it. The mirror is
+    // the only place that can remember which screen you left from.
+    let mirror = null
+    const raw = readDraft()
+    if (raw) {
+      try {
+        mirror = JSON.parse(raw)
+      } catch {
+        sessionStorage.removeItem(draftKey())
+        mirrorDraft('clear')
+      }
+    }
+
+    // The measurement is restored from the local record first, and from the cloud
+    // draft only when there is no local record.
+    //
+    // The local record is written the moment the clock is started, paused or
+    // stopped, so on the device that took the measurement it is always at least as
+    // fresh as the draft, which is written on a debounce. The draft is what carries
+    // the measurement to a *different* device, and there is no local record to
+    // disagree with it.
+    const stopwatch = readStopwatch(currentUserId())
+
+    if (cloud || mirror) {
+      const draftId = cloud ? cloud.id : openingSessionIdRef.current
+      if (cloud) setCurrentSessionId(cloud.id)
+      // Merge the two copies by content, not by always preferring the mirror.
+      // An empty mirror written while the timer ran used to beat a full cloud draft
+      // and open a blank editor while the sets were still in Postgres. mergeDraftLogs
+      // gives the filled copy the win, per exercise id.
+      const draftRoutineId = mirror
+        ? mirror.routineId || null
+        : cloud.routine_id || null
+      setRoutineId(draftRoutineId)
+      setDate(mirror ? mirror.date || todayISO() : cloud.date || todayISO())
+      setSessionNotes(mirror ? (mirror.sessionNotes ?? '') : (cloud.notes || ''))
+      // …unless you left the Log tab on the routine list. Then the list is where
+      // you come back to: the list is the screen you choose what to log from, and
+      // being dropped into a routine you walked out of is not a choice anybody
+      // made.
+      const onRoutineList = Boolean(mirror && mirror.picking === true)
+      setPicking(onRoutineList)
+      // Merged back into the routine, not used as the whole editor. The draft only holds
+      // exercises with a logged set, so restoring it verbatim would reopen the page with
+      // one card — the one you happened to fill last. Re-seeding puts every exercise
+      // back, empty ones included, which is what you were looking at when you left.
+      const source = draftRoutineId ? routineExercises(draftRoutineId) : exs
+      // The cloud draft keeps only filled cards; the mirror keeps empty ones too.
+      // mergeWithLibrary re-seeds the empty ones from the library either way.
+      const savedLogs = mergeDraftLogs(mirror?.logs, cloud?.exercise_logs, cardHasContent)
+      setLogs(mergeWithLibrary(source, savedLogs, generateId))
+      setHasDraft(true)
+      if (stopwatch) {
+        setTimer({ ...stopwatch, sessionId: draftId })
+      } else if (mirror && mirror.timer) {
+        setTimer({ ...mirror.timer, sessionId: draftId })
+      } else if (cloud) {
+        // The draft carries the time already counted and the start of the current
+        // segment, which between them give the elapsed time exactly.
+        setTimer(
+          restoreStopwatch(currentUserId(), cloud.id, {
+            accumulatedMs: (cloud.duration_seconds || 0) * 1000,
+            runningSince: cloud.started_at ? Date.parse(cloud.started_at) : null,
+          }),
+        )
+      }
+      loadedRef.current = true
+      return
+    }
+
+    // Nothing in progress: the Log tab opens on the routine list.
+    //
+    // It used to open on the whole exercise library, which is the thing this
+    // feature exists to fix — a list of dozens of rows, of which you do six.
+    // The editor stays empty until a routine is picked.
+    setLogs([])
+    setPicking(true)
+    // No clock is started here. Opening the Log page used to start one by itself,
+    // which meant that simply looking at the app recorded time nobody spent
+    // training. The measurement waits for a deliberate Start.
+    //
+    // A measurement left over from an earlier visit is restored, though: the clock
+    // keeps counting while the app is closed or the account is signed out, so
+    // coming back to it should show the time that passed, not zero.
+    if (stopwatch) setTimer({ ...stopwatch, sessionId: openingSessionIdRef.current })
+    loadedRef.current = true
+  }, [sessionId, isEditMode])
+
   useEffect(() => {
     let cancelled = false
-    async function load() {
-      const [exs, routineList] = await Promise.all([getExercises(), getRoutines()])
-      if (cancelled) return
-      setExercises(exs)
-      setRoutines(routineList)
-
-      // The exercises a routine holds, in the routine's order, as library entries.
-      // An exercise that has since been deleted from the library is left out rather
-      // than shown as a blank card.
-      const routineExercises = id => {
-        const routine = routineList.find(r => r.id === id)
-        if (!routine) return []
-        return routine.exercise_ids
-          .map(eid => exs.find(e => e.id === eid))
-          .filter(Boolean)
-      }
-
-      if (isEditMode) {
-        // Only the one session being edited. This used to load every session in the
-        // account and pick one out of the result, which on a phone meant downloading
-        // 176 KB of other workouts to change this one.
-        const existing = await getSession(sessionId)
-        if (cancelled) return
-        if (existing) {
-          setDate(existing.date)
-          setSessionNotes(existing.notes || '')
-          // The routine the workout was logged from. Editing a workout must not wipe
-          // that: the save writes the routine id back, and an edit form that does not
-          // know it would quietly untie the workout from the plan it came from.
-          setRoutineId(existing.routine_id || null)
-          // Editing shows the workout. The routine list is for choosing what to log,
-          // and there is nothing to choose when a workout already exists.
-          setPicking(false)
-          const recorded = Number.isFinite(existing.duration_seconds) ? existing.duration_seconds : null
-          setDurationSeconds(recorded)
-          // The fields are pre-filled with the recorded duration rather than left
-          // blank. A workout that was measured should open its editor showing that
-          // measurement — otherwise the number is hidden behind an empty box, and
-          // saving would replace it with whatever the fields happened to say.
-          setDurationHours(recorded === null ? null : Math.floor(recorded / 3600))
-          setDurationMinutes(recorded === null ? null : Math.floor((recorded % 3600) / 60))
-          setLogs(
-            (existing.exercise_logs || []).map(log => {
-              const ex = exs.find(e => e.id === log.exercise_id)
-              return {
-                ...log,
-                _name: ex?.name || 'Unknown',
-                _image_url: ex?.image_url || null,
-              }
-            }),
-          )
-        }
-        loadedRef.current = true
-        return
-      }
-
-      // New session — restore a draft before falling back to a blank slate.
-      //
-      // Two copies are read, and they are not interchangeable. The cloud draft is the
-      // copy that survives the tab being killed or the account being signed out, and
-      // the one that carries a workout to another device. The local mirror is the copy
-      // this device actually has, and it is fresher.
-      const cloud = await getDraft()
-      if (cancelled) return
-
-      // The local mirror. It holds every card, including the empty ones the cloud
-      // draft drops — and it is where the user's last *navigation* lives.
-      //
-      // That second part matters. The cloud draft remembers which routine a workout
-      // belongs to, but it has no way of saying "the Log tab was left on the routine
-      // list". So it reopened the routine you had deliberately walked out of, and
-      // the Log tab argued with you every time you came back to it. The mirror is
-      // the only place that can remember which screen you left from.
-      let mirror = null
-      const raw = readDraft()
-      if (raw) {
-        try {
-          mirror = JSON.parse(raw)
-        } catch {
-          sessionStorage.removeItem(draftKey())
-          mirrorDraft('clear')
-        }
-      }
-
-      // The measurement is restored from the local record first, and from the cloud
-      // draft only when there is no local record.
-      //
-      // The local record is written the moment the clock is started, paused or
-      // stopped, so on the device that took the measurement it is always at least as
-      // fresh as the draft, which is written on a debounce. The draft is what carries
-      // the measurement to a *different* device, and there is no local record to
-      // disagree with it.
-      const stopwatch = readStopwatch(currentUserId())
-
-      if (cloud || mirror) {
-        const draftId = cloud ? cloud.id : openingSessionIdRef.current
-        if (cloud) setCurrentSessionId(cloud.id)
-        // The mirror wins where the two disagree.
-        //
-        // It is written the instant something changes, where the cloud draft is
-        // written on a debounce — and not at all if the app is left inside that
-        // window, which is exactly when a note or a set is most likely to be
-        // missing from it. The cloud draft is the copy that carries a workout to
-        // another device, and the copy that survives a killed tab; the mirror is the
-        // copy this device actually has. Same rule the stopwatch already follows.
-        const draftRoutineId = mirror
-          ? mirror.routineId || null
-          : cloud.routine_id || null
-        setRoutineId(draftRoutineId)
-        setDate(mirror ? mirror.date || todayISO() : cloud.date || todayISO())
-        setSessionNotes(mirror ? (mirror.sessionNotes ?? '') : (cloud.notes || ''))
-        // …unless you left the Log tab on the routine list. Then the list is where
-        // you come back to: the list is the screen you choose what to log from, and
-        // being dropped into a routine you walked out of is not a choice anybody
-        // made.
-        const onRoutineList = Boolean(mirror && mirror.picking === true)
-        setPicking(onRoutineList)
-        // Merged back into the routine, not used as the whole editor. The draft only holds
-        // exercises with a logged set, so restoring it verbatim would reopen the page with
-        // one card — the one you happened to fill last. Re-seeding puts every exercise
-        // back, empty ones included, which is what you were looking at when you left.
-        const source = draftRoutineId ? routineExercises(draftRoutineId) : exs
-        // The cloud draft keeps only the cards that were filled. The mirror keeps every
-        // card, so the empty ones are filtered out here for the same reason.
-        const savedLogs = mirror
-          ? (mirror.logs || []).filter(cardHasContent)
-          : cloud.exercise_logs
-        setLogs(mergeWithLibrary(source, savedLogs, generateId))
-        setHasDraft(true)
-        if (stopwatch) {
-          setTimer({ ...stopwatch, sessionId: draftId })
-        } else if (mirror && mirror.timer) {
-          setTimer({ ...mirror.timer, sessionId: draftId })
-        } else if (cloud) {
-          // The draft carries the time already counted and the start of the current
-          // segment, which between them give the elapsed time exactly.
-          setTimer(
-            restoreStopwatch(currentUserId(), cloud.id, {
-              accumulatedMs: (cloud.duration_seconds || 0) * 1000,
-              runningSince: cloud.started_at ? Date.parse(cloud.started_at) : null,
-            }),
-          )
-        }
-        loadedRef.current = true
-        return
-      }
-
-      // Nothing in progress: the Log tab opens on the routine list.
-      //
-      // It used to open on the whole exercise library, which is the thing this
-      // feature exists to fix — a list of dozens of rows, of which you do six.
-      // The editor stays empty until a routine is picked.
-      setLogs([])
-      setPicking(true)
-      // No clock is started here. Opening the Log page used to start one by itself,
-      // which meant that simply looking at the app recorded time nobody spent
-      // training. The measurement waits for a deliberate Start.
-      //
-      // A measurement left over from an earlier visit is restored, though: the clock
-      // keeps counting while the app is closed or the account is signed out, so
-      // coming back to it should show the time that passed, not zero.
-      if (stopwatch) setTimer({ ...stopwatch, sessionId: openingSessionIdRef.current })
-      loadedRef.current = true
-    }
-    load()
+    hydrateFromDraft(() => cancelled)
     return () => {
       cancelled = true
     }
-  }, [sessionId, isEditMode])
+  }, [hydrateFromDraft, reloadKey])
 
   // Auto-save the draft on every change, new sessions only.
   useEffect(() => {
@@ -331,7 +339,9 @@ export default function LogWorkout() {
       // `picking` is the screen the Log tab was left on. Without it the restore could
       // only reopen the routine the draft belonged to, and leaving that routine by
       // tapping "Routines" meant the next visit threw you straight back into it.
-      const payload = JSON.stringify({ logs, date, sessionNotes, timer, routineId, picking })
+      // savedAt is diagnostics only: if a restore ever picks the wrong copy, this says
+      // how stale the mirror was. The merge rule itself is content-based.
+      const payload = JSON.stringify({ logs, date, sessionNotes, timer, routineId, picking, savedAt: new Date().toISOString() })
       sessionStorage.setItem(draftKey(), payload)
       mirrorDraft('set', payload)
     } else {
@@ -358,13 +368,29 @@ export default function LogWorkout() {
     return () => window.removeEventListener('beforeunload', warn)
   }, [hasDraft, isEditMode])
 
-  // Clears both copies of the draft: the local mirror and the cloud row. The cloud delete
-  // is fire-and-forget — the screen has already reset, and a failure here would leave a
-  // draft that the next autosave replaces anyway (one draft per account).
-  function discardCurrentDraft() {
+  // Discard is soft now: the cloud row is stamped, not deleted, so Undo can bring it
+  // back. The local copies are cleared so a discard looks and feels final.
+  async function discardCurrentDraft() {
+    // Stop autosave before the row is stamped. A debounce landing after the discard used
+    // to write a fresh empty draft five minutes later — a zombie workout that appeared
+    // out of nowhere. pause() also waits for an in-flight write, so the row we stamp is
+    // the one that holds the latest sets, not the one from before the last keystroke.
+    await pauseAutosave()
+    const savedTimer = timer
+    const savedPayload = readDraft()
+    let id = null
+    try {
+      id = await discardDraft()
+    } catch {
+      // The screen still has to reset. A failed cloud write leaves an orphan row at
+      // worst, and the next draft write will retire it rather than collide with it.
+    }
     sessionStorage.removeItem(draftKey())
     mirrorDraft('clear')
-    discardDraft().catch(() => {})
+    // Keep enough to undo without a network round trip: the row id when there is one,
+    // the local payload when there is not (offline), and the measurement, which lives
+    // outside both copies and was cleared by the discard.
+    setUndo((id || savedPayload || savedTimer) ? { id, timer: savedTimer, payload: savedPayload } : null)
     setHasDraft(false)
     setDate(todayISO())
     setSessionNotes('')
@@ -382,7 +408,49 @@ export default function LogWorkout() {
     // and waits for a deliberate Start like any other.
     clearStopwatch(currentUserId())
     setTimer(null)
+    // The editor is empty, so a resumed autosave has nothing to write. It must be
+    // resumed, though, or the next workout would never be saved at all.
+    resumeAutosave()
   }
+
+  /** Undo the discard: clear the stamp and rehydrate the editor from the restored row. */
+  async function undoDiscard() {
+    const item = undo
+    setUndo(null)
+    if (!item) return
+    try {
+      if (item.id) {
+        await restoreSession(item.id)
+      } else if (item.payload) {
+        // Offline: there was no cloud row to stamp, so putting the local copies back is
+        // the whole restore.
+        try {
+          sessionStorage.setItem(draftKey(), item.payload)
+          mirrorDraft('set', item.payload)
+        } catch { /* storage refused */ }
+      }
+      if (item.timer) {
+        // Put the measurement back before rehydrating: the loader reads the local record
+        // first, so the clock and the restored row end up agreeing.
+        setTimer(
+          restoreStopwatch(currentUserId(), item.id || currentSessionId, {
+            accumulatedMs: item.timer.accumulatedMs,
+            runningSince: item.timer.runningSince,
+          }),
+        )
+      }
+      setReloadKey(k => k + 1)
+    } catch (err) {
+      setSaveError(`Could not restore the discarded workout: ${err.message}`)
+    }
+  }
+
+  // The undo banner has a short life: it is a second chance, not a permanent UI element.
+  useEffect(() => {
+    if (!undo) return undefined
+    const id = setTimeout(() => setUndo(null), 8000)
+    return () => clearTimeout(id)
+  }, [undo])
 
   // What autosave writes. Same shape handleSave builds, minus the filtering that only
   // makes sense at commit time: a draft keeps every set the user has typed, including
@@ -758,6 +826,18 @@ export default function LogWorkout() {
 
   const loggedCount = logs.filter(l => l.set_entries.some(s => s.weight || s.reps)).length
 
+  // The confirmation names what is being lost. A bare "Discard?" is how this happened
+  // in the first place: a button that did not say what it did.
+  const discardExercises = logs.filter(cardHasContent)
+  const discardSets = discardExercises.reduce(
+    (n, log) => n + log.set_entries.filter(s => s.weight || s.reps).length,
+    0,
+  )
+  const discardMessage =
+    `${discardExercises.length} exercise${discardExercises.length === 1 ? '' : 's'} · ` +
+    `${discardSets} set${discardSets === 1 ? '' : 's'} · ${formatDuration(elapsedSeconds(timer))}. ` +
+    `You can restore it from History → Discarded.`
+
   // The name of the routine being logged, for the header.
   const routineName = routines.find(r => r.id === routineId)?.name || 'Workout'
 
@@ -844,8 +924,18 @@ export default function LogWorkout() {
               </>
             )}
             {hasDraft && !isEditMode && (
-              <button onClick={discardCurrentDraft} className="chip" style={{ minHeight: 36 }}>
-                <RotateCcw size={14} /> {formatDate(date)}
+              <span className="chip tnum" style={{ minHeight: 36 }}>{formatDate(date)}</span>
+            )}
+            {/* Discard says what it does and only appears where the cards are on screen.
+                The old date chip looked like a refresh button and was visible on the
+                routine list, so a workout could be deleted with the cards hidden. */}
+            {hasDraft && !isEditMode && !picking && !editingRoutine && (
+              <button
+                onClick={() => setConfirmDiscard(true)}
+                className="btn-quiet"
+                style={{ color: 'var(--destructive)' }}
+              >
+                <Trash2 size={14} /> Discard
               </button>
             )}
             {/* Autosave is quiet by design — it should not compete with the workout for
@@ -872,6 +962,24 @@ export default function LogWorkout() {
           </div>
         )}
       </div>
+
+      {undo && (
+        <div
+          role="status"
+          className="card"
+          style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 14px', marginBottom: 16 }}
+        >
+          <span style={{ flex: 1, fontSize: 'var(--type-subhead)', color: 'var(--ink)' }}>
+            Workout discarded
+          </span>
+          <button onClick={undoDiscard} className="btn-quiet" style={{ color: 'var(--primary)', fontWeight: 700 }}>
+            Undo
+          </button>
+          <button onClick={() => setUndo(null)} aria-label="Dismiss" className="btn-icon">
+            ×
+          </button>
+        </div>
+      )}
 
       {editingRoutine ? (
         <RoutineEditor
@@ -1200,6 +1308,18 @@ export default function LogWorkout() {
           }}
         />
       )}
+
+      <ConfirmDialog
+        open={confirmDiscard}
+        title="Discard this workout?"
+        message={discardMessage}
+        confirmLabel="Discard"
+        onCancel={() => setConfirmDiscard(false)}
+        onConfirm={() => {
+          setConfirmDiscard(false)
+          discardCurrentDraft()
+        }}
+      />
     </div>
   )
 }
