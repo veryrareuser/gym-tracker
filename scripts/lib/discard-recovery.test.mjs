@@ -22,6 +22,9 @@ const draft = read('src/lib/draft.js')
 const migration = read('sql/session-soft-delete.sql')
 const view = read('sql/session-summaries.sql')
 const aggregates = read('sql/secure-aggregates.sql')
+const lintConfig = JSON.parse(read('.oxlintrc.json'))
+const main = read('src/main.jsx')
+const renderTest = read('scripts/lib/render-components.test.mjs')
 
 let failures = 0
 function check(label, ok, detail = '') {
@@ -81,7 +84,7 @@ check('the merge is content-based and import-free', draft.includes('export funct
 
 console.log('\n4. a discarded workout can be found')
 check('History fetches discarded rows', history.includes('getDiscardedSessions()'))
-check('History renders a collapsed section', history.includes('showDiscarded') && history.includes('Discarded ('))
+check('History renders a collapsed section', history.includes('<DiscardedList') && history.includes('Discarded ('))
 check('both kinds are labelled', history.includes('Unfinished workout') && history.includes('Deleted workout'))
 check('a row can be restored', history.includes('confirmRestore(row)') && history.includes('await restoreSession(row.id)'))
 check('a restored draft resumes in the Log tab', history.includes("navigate('/log')"))
@@ -89,6 +92,12 @@ check('delete forever asks first', history.includes('title="Delete forever?"') &
 check('History says deletion is reversible', history.includes('You can restore it from there.'))
 check('Dashboard surfaces an unfinished workout', dashboard.includes('getDraft().then(setDraft)') &&
   dashboard.includes('Resume workout'))
+
+console.log('\n5. a render bug cannot strand the user')
+check('undefined names fail lint', lintConfig.rules['eslint/no-undef'] === 'error')
+check('render tests mount the data-dependent UI', renderTest.includes('discarded draft row') &&
+  renderTest.includes('resume card with a draft') && renderTest.includes('error fallback has a way out'))
+check('the app has an error boundary', main.includes('<ErrorBoundary>') && main.includes('</ErrorBoundary>'))
 
 console.log(`\n${failures === 0 ? 'A discard is visible, labelled and reversible.' : `${failures} FAILED.`}`)
 process.exit(failures === 0 ? 0 : 1)

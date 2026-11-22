@@ -32,13 +32,14 @@ import GEOMETRY from '../../src/lib/body-geometry.js'
 import { RENDER_REGIONS, RENDER_KEY } from '../../src/lib/muscles.js'
 
 import SignIn from '../../src/components/SignIn.jsx'
+import { ErrorFallback } from '../../src/components/ErrorBoundary.jsx'
 import Layout from '../../src/components/Layout.jsx'
 import StatCards from '../../src/components/StatCards.jsx'
 import TrainingTime from '../../src/components/TrainingTime.jsx'
 import ActivityHeatmap from '../../src/components/ActivityHeatmap.jsx'
 import MuscleBalance from '../../src/components/MuscleBalance.jsx'
-import Dashboard from '../../src/pages/Dashboard.jsx'
-import History from '../../src/pages/History.jsx'
+import Dashboard, { ResumeCard } from '../../src/pages/Dashboard.jsx'
+import History, { DiscardedList, DiscardedRow } from '../../src/pages/History.jsx'
 import Exercises from '../../src/pages/Exercises.jsx'
 import LogWorkout from '../../src/pages/LogWorkout.jsx'
 import SessionDetail from '../../src/pages/SessionDetail.jsx'
@@ -68,6 +69,24 @@ const sessions = perDay.map(([date, sets], i) => ({
     set_entries: Array.from({ length: sets }, (_, j) => ({ id: 'x' + i + j, weight: 60, reps: 8 })),
   }],
 }))
+
+// The conditional UI that only appears once there is data. Mounting a page bare never
+// reaches it — its data arrives in an effect, which renderToString does not run. These
+// are the rows that blanked the app when a name used inside them was not imported.
+const discardedDraft = {
+  id: 'd1', date: '2026-11-22', is_draft: true, duration_seconds: 0,
+  deleted_at: '2026-11-22T14:29:27.87Z', volume: 0, set_count: 0,
+  exercise_count: 0, exercise_names: [],
+}
+const discardedSaved = {
+  id: 'd2', date: '2026-11-20', is_draft: false, duration_seconds: 4800,
+  deleted_at: '2026-11-21T02:10:00.000Z', volume: 3380, set_count: 13,
+  exercise_count: 7, exercise_names: ['Barbell deadlift'],
+}
+const draftRow = {
+  id: 'd3', date: '2026-11-22', duration_seconds: 300, started_at: null,
+  exercise_logs: [{ id: 'l1' }],
+}
 
 const routed = el => createElement(MemoryRouter, null, el)
 
@@ -155,6 +174,22 @@ const cases = [
   ['Exercises', () => routed(createElement(Exercises))],
   ['LogWorkout', () => routed(createElement(LogWorkout))],
   ['SessionDetail', () => routed(createElement(SessionDetail))],
+  // Data-dependent UI, rendered with the shapes Postgres actually returns.
+  ['discarded list, collapsed', () => createElement(DiscardedList, {
+    rows: [discardedDraft], onRestore: () => {}, onPurge: () => {},
+  })],
+  ['discarded draft row', () => createElement(DiscardedRow, {
+    row: discardedDraft, onRestore: () => {}, onPurge: () => {},
+  })],
+  ['discarded saved row', () => createElement(DiscardedRow, {
+    row: discardedSaved, onRestore: () => {}, onPurge: () => {},
+  })],
+  ['resume card with a draft', () => createElement(ResumeCard, {
+    draft: draftRow, now: Date.parse('2026-11-22T12:00:00Z'), onResume: () => {},
+  })],
+  ['error fallback has a way out', () => routed(createElement(ErrorFallback, {
+    onReload: () => {}, onHistory: () => {},
+  }))],
   // The Stats sections, which do take data.
   ['StatCards', () => createElement(StatCards, { sessions })],
   ['TrainingTime', () => createElement(TrainingTime, { sessions })],

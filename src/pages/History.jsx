@@ -3,7 +3,7 @@ import { useEffect, useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ChevronRight, ChevronUp, ChevronDown, RotateCcw, Dumbbell, Trash2, ChevronLeft, Clock } from 'lucide-react'
 import { getSessionSummaries, getDiscardedSessions, deleteSession, restoreSession, purgeSession } from '../lib/db'
-import { todayISO, formatDuration } from '../lib/utils'
+import { todayISO, formatDate, formatDuration } from '../lib/utils'
 import ConfirmDialog from '../components/ConfirmDialog'
 
 const DAY_LABELS = ['M', 'T', 'W', 'T', 'F', 'S', 'S']
@@ -65,13 +65,80 @@ function CalendarGrid({ year, month, sessionsByDate, onDayClick }) {
   )
 }
 
+/**
+ * One discarded row, exported so a render test can mount it with real data. The page
+ * fetches in an effect, which renderToString never runs, so the section used to be
+ * tested only when empty — exactly where an undefined name hid until it blanked the app.
+ */
+export function DiscardedRow({ row, onRestore, onPurge }) {
+  return (
+    <div className="card" style={{ padding: 12, marginBottom: 8 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontWeight: 600, fontSize: 'var(--type-subhead)' }}>
+            {formatDate(row.date)}
+          </div>
+          <div style={{ color: 'var(--ink-muted)', fontSize: 'var(--type-fine)' }}>
+            {row.is_draft ? 'Unfinished workout' : 'Deleted workout'}
+            {row.deleted_at && ` · discarded ${discardedWhen(row.deleted_at)}`}
+          </div>
+        </div>
+        <div style={{ textAlign: 'right', flexShrink: 0 }}>
+          <div className="tnum" style={{ fontWeight: 600, color: 'var(--primary)', fontSize: 'var(--type-subhead)' }}>
+            {Math.round(row.volume)} kg
+          </div>
+          <div style={{ color: 'var(--ink-muted)', fontSize: 'var(--type-fine)' }}>
+            {row.exercise_count || 0} ex · {row.set_count || 0} sets
+            {row.duration_seconds ? ` · ${formatDuration(row.duration_seconds)}` : ''}
+          </div>
+        </div>
+      </div>
+      <div style={{ display: 'flex', gap: 8, marginTop: 10, alignItems: 'center' }}>
+        <button onClick={() => onRestore(row)} className="btn-secondary" style={{ flex: 1 }}>
+          <RotateCcw size={15} />
+          {row.is_draft ? 'Resume workout' : 'Restore'}
+        </button>
+        <button
+          onClick={() => onPurge(row)}
+          className="btn-quiet"
+          style={{ color: 'var(--destructive)' }}
+        >
+          <Trash2 size={15} /> Delete forever
+        </button>
+      </div>
+    </div>
+  )
+}
+
+export function DiscardedList({ rows, onRestore, onPurge }) {
+  const [open, setOpen] = useState(false)
+  if (!rows || rows.length === 0) return null
+
+  return (
+    <section style={{ marginBottom: 24 }}>
+      <button
+        onClick={() => setOpen(v => !v)}
+        aria-expanded={open}
+        className="btn-quiet"
+        style={{ width: '100%', justifyContent: 'space-between', marginBottom: open ? 8 : 0 }}
+      >
+        <span>Discarded ({rows.length})</span>
+        {open ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+      </button>
+
+      {open && rows.map(row => (
+        <DiscardedRow key={row.id} row={row} onRestore={onRestore} onPurge={onPurge} />
+      ))}
+    </section>
+  )
+}
+
 export default function History() {
   const [sessions, setSessions] = useState([])
   const [pendingDelete, setPendingDelete] = useState(null)
   // Discarded rows live below the real workouts, collapsed by default. Nothing is
   // hidden permanently: "discarded" now means "recoverable", not "gone".
   const [discarded, setDiscarded] = useState([])
-  const [showDiscarded, setShowDiscarded] = useState(false)
   const [pendingPurge, setPendingPurge] = useState(null)
   const navigate = useNavigate()
 
@@ -318,57 +385,7 @@ export default function History() {
         )
       })}
 
-      {discarded.length > 0 && (
-        <section style={{ marginBottom: 24 }}>
-          <button
-            onClick={() => setShowDiscarded(v => !v)}
-            aria-expanded={showDiscarded}
-            className="btn-quiet"
-            style={{ width: '100%', justifyContent: 'space-between', marginBottom: showDiscarded ? 8 : 0 }}
-          >
-            <span>Discarded ({discarded.length})</span>
-            {showDiscarded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-          </button>
-
-          {showDiscarded && discarded.map(row => (
-            <div key={row.id} className="card" style={{ padding: 12, marginBottom: 8 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ fontWeight: 600, fontSize: 'var(--type-subhead)' }}>
-                    {formatDate(row.date)}
-                  </div>
-                  <div style={{ color: 'var(--ink-muted)', fontSize: 'var(--type-fine)' }}>
-                    {row.is_draft ? 'Unfinished workout' : 'Deleted workout'}
-                    {row.deleted_at && ` · discarded ${discardedWhen(row.deleted_at)}`}
-                  </div>
-                </div>
-                <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                  <div className="tnum" style={{ fontWeight: 600, color: 'var(--primary)', fontSize: 'var(--type-subhead)' }}>
-                    {Math.round(row.volume)} kg
-                  </div>
-                  <div style={{ color: 'var(--ink-muted)', fontSize: 'var(--type-fine)' }}>
-                    {row.exercise_count || 0} ex · {row.set_count || 0} sets
-                    {row.duration_seconds ? ` · ${formatDuration(row.duration_seconds)}` : ''}
-                  </div>
-                </div>
-              </div>
-              <div style={{ display: 'flex', gap: 8, marginTop: 10, alignItems: 'center' }}>
-                <button onClick={() => confirmRestore(row)} className="btn-secondary" style={{ flex: 1 }}>
-                  <RotateCcw size={15} />
-                  {row.is_draft ? 'Resume workout' : 'Restore'}
-                </button>
-                <button
-                  onClick={() => setPendingPurge(row)}
-                  className="btn-quiet"
-                  style={{ color: 'var(--destructive)' }}
-                >
-                  <Trash2 size={15} /> Delete forever
-                </button>
-              </div>
-            </div>
-          ))}
-        </section>
-      )}
+      <DiscardedList rows={discarded} onRestore={confirmRestore} onPurge={setPendingPurge} />
 
       <ConfirmDialog
         open={Boolean(pendingDelete)}
