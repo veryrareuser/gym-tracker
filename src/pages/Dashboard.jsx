@@ -6,6 +6,41 @@ import { getSessionSummaries, getDraft } from '../lib/db'
 import { formatDate, todayISO, formatHoursDecimal, formatDuration } from '../lib/utils'
 import { weekStreak, totalDurationSeconds } from '../lib/stats'
 
+/**
+ * The unfinished-workout card, extracted so a render test can mount it with a real draft
+ * row. Pages fetch in effects, which renderToString never runs, so a card that only
+ * appears when a draft exists would otherwise be tested only when it is absent.
+ */
+export function ResumeCard({ draft, now, onResume }) {
+  if (!draft) return null
+  // A running segment is counted up to the instant captured by the page, so this stays
+  // pure — reading the clock here would be an impurity React can invalidate at will.
+  const seconds = Math.round(
+    (Number(draft.duration_seconds) || 0) +
+      (draft.started_at ? Math.max(0, now - Date.parse(draft.started_at)) / 1000 : 0),
+  )
+  return (
+    <button
+      onClick={onResume}
+      className="card card-accent"
+      style={{ display: 'block', width: '100%', textAlign: 'left', padding: 16, marginBottom: 24 }}
+    >
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontWeight: 700, fontSize: 'var(--type-headline)' }}>Resume workout</div>
+          <div style={{ color: 'var(--nb-black)', fontSize: 'var(--type-subhead)' }}>
+            {formatDate(draft.date)} · {draft.exercise_logs?.length || 0} exercises
+          </div>
+        </div>
+        <div style={{ textAlign: 'right', color: 'var(--nb-black)', flexShrink: 0 }}>
+          <Clock size={16} aria-hidden="true" />
+          <div className="tnum" style={{ fontWeight: 700 }}>{formatDuration(seconds)}</div>
+        </div>
+      </div>
+    </button>
+  )
+}
+
 export default function Dashboard() {
   const [sessions, setSessions] = useState([])
   const [draft, setDraft] = useState(null)
@@ -24,16 +59,6 @@ export default function Dashboard() {
     // Showing it here is the other half of making a discard hard to do by accident.
     getDraft().then(setDraft)
   }, [])
-
-  // The elapsed time for the resume card. `today` was captured on mount, so this does
-  // not read the clock during render; a running segment is still counted up to that
-  // instant, which is close enough for a card the user taps to get the live clock.
-  const draftSeconds = draft
-    ? Math.round(
-        (Number(draft.duration_seconds) || 0) +
-          (draft.started_at ? Math.max(0, today.getTime() - Date.parse(draft.started_at)) / 1000 : 0),
-      )
-    : null
 
   const lastSession = sessions[0]
   const loggedToday = lastSession?.date === todayISO()
@@ -72,26 +97,7 @@ export default function Dashboard() {
         <h1 className="screen-title">{loggedToday ? 'Session logged' : 'Ready to train?'}</h1>
       </header>
 
-      {draft && (
-        <button
-          onClick={() => navigate('/log')}
-          className="card card-accent"
-          style={{ display: 'block', width: '100%', textAlign: 'left', padding: 16, marginBottom: 24 }}
-        >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-            <div style={{ minWidth: 0 }}>
-              <div style={{ fontWeight: 700, fontSize: 'var(--type-headline)' }}>Resume workout</div>
-              <div style={{ color: 'var(--nb-black)', fontSize: 'var(--type-subhead)' }}>
-                {formatDate(draft.date)} · {draft.exercise_logs?.length || 0} exercises
-              </div>
-            </div>
-            <div style={{ textAlign: 'right', color: 'var(--nb-black)', flexShrink: 0 }}>
-              <Clock size={16} aria-hidden="true" />
-              <div className="tnum" style={{ fontWeight: 700 }}>{formatDuration(draftSeconds)}</div>
-            </div>
-          </div>
-        </button>
-      )}
+      <ResumeCard draft={draft} now={today.getTime()} onResume={() => navigate('/log')} />
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8, marginBottom: 24 }}>
         {stats.map(({ label, value, unit, icon: Icon }) => (
